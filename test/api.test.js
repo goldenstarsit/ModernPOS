@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handleApiRequest } from "../api.js";
 
-test("database health endpoint returns a safe 503 when the database fails", () => {
+test("database health endpoint returns a safe 503 when the database fails", async () => {
   let status;
   let headers;
   let body;
@@ -24,7 +24,7 @@ test("database health endpoint returns a safe 503 when the database fails", () =
     }
   };
 
-  const handled = handleApiRequest(
+  const handled = await handleApiRequest(
     req,
     res,
     "/api/health/database",

@@ -38,7 +38,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (handleApiRequest(req, res, pathname, db)) return;
+  if (await handleApiRequest(req, res, pathname, db)) return;
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405, { Allow: "GET, HEAD" });
