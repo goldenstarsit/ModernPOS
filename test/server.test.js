@@ -179,7 +179,7 @@ test("database health endpoint confirms SQLite connectivity", async (t) => {
   assert.deepEqual(await response.json(), {
     status: "ok",
     database: "connected",
-    schemaVersion: 1
+    schemaVersion: 2
   });
 });
 

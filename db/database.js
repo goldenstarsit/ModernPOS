@@ -24,6 +24,35 @@ const migrations = [
           DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       ) STRICT;
     `
+  },
+  {
+    version: 2,
+    name: "initial_products",
+    sql: `
+      CREATE TABLE products (
+        id INTEGER PRIMARY KEY,
+        sku TEXT,
+        name TEXT NOT NULL
+          CHECK (length(trim(name)) > 0),
+        description TEXT NOT NULL DEFAULT '',
+        unit TEXT NOT NULL DEFAULT 'piece'
+          CHECK (length(trim(unit)) > 0),
+        cost_price_paisa INTEGER NOT NULL DEFAULT 0
+          CHECK (cost_price_paisa >= 0),
+        sale_price_paisa INTEGER NOT NULL DEFAULT 0
+          CHECK (sale_price_paisa >= 0),
+        is_active INTEGER NOT NULL DEFAULT 1
+          CHECK (is_active IN (0, 1)),
+        created_at TEXT NOT NULL
+          DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updated_at TEXT NOT NULL
+          DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ) STRICT;
+
+      CREATE UNIQUE INDEX products_sku_unique
+        ON products(lower(trim(sku)))
+        WHERE sku IS NOT NULL AND trim(sku) <> '';
+    `
   }
 ];
 

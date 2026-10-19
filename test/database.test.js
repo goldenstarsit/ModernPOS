@@ -34,17 +34,21 @@ test("database creates initial schema and records its migration", (t) => {
 
     assert.deepEqual(tables, [
       "app_metadata",
+      "products",
       "schema_migrations"
     ]);
 
     assert.deepEqual(
       db.prepare(
-        "SELECT version, name FROM schema_migrations"
+        "SELECT version, name FROM schema_migrations ORDER BY version"
       ).all().map((row) => ({
         version: row.version,
         name: row.name
       })),
-      [{ version: 1, name: "initial_metadata" }]
+      [
+        { version: 1, name: "initial_metadata" },
+        { version: 2, name: "initial_products" }
+      ]
     );
   } finally {
     db.close();
@@ -81,7 +85,7 @@ test("database preserves metadata after reopening", (t) => {
       second.prepare(
         "SELECT COUNT(*) AS count FROM schema_migrations"
       ).get().count,
-      1
+      2
     );
   } finally {
     second.close();
@@ -101,6 +105,54 @@ test("database enables foreign keys and passes integrity check", (t) => {
       db.prepare("PRAGMA integrity_check").get().integrity_check,
       "ok"
     );
+  } finally {
+    db.close();
+  }
+});
+
+
+test("products enforce required fields, valid prices, and unique SKUs", (t) => {
+  const db = openDatabase(createTestDatabase(t));
+
+  try {
+    const insert = db.prepare(`
+      INSERT INTO products (
+        sku, name, unit, cost_price_paisa, sale_price_paisa
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    insert.run("MED-001", "Paracetamol", "tablet", 250, 400);
+
+    assert.throws(
+      () => insert.run("MED-002", "   ", "tablet", 250, 400),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
+      () => insert.run("MED-002", "Test product", "piece", -1, 100),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
+      () => insert.run("med-001", "Duplicate SKU", "box", 100, 200),
+      /UNIQUE constraint failed/
+    );
+
+    const product = db.prepare(`
+      SELECT sku, name, unit, cost_price_paisa, sale_price_paisa, is_active
+      FROM products
+      WHERE sku = ?
+    `).get("MED-001");
+
+    assert.deepEqual({ ...product }, {
+      sku: "MED-001",
+      name: "Paracetamol",
+      unit: "tablet",
+      cost_price_paisa: 250,
+      sale_price_paisa: 400,
+      is_active: 1
+    });
   } finally {
     db.close();
   }
