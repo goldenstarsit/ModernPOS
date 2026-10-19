@@ -11,7 +11,7 @@ function sendJson(res, status, data, method = "GET", headers = {}) {
   res.end(method === "HEAD" ? undefined : body);
 }
 
-export function handleApiRequest(req, res, pathname) {
+export function handleApiRequest(req, res, pathname, db) {
   if (pathname !== "/api" && !pathname.startsWith("/api/")) {
     return false;
   }
@@ -37,12 +37,45 @@ export function handleApiRequest(req, res, pathname) {
     sendJson(
       res,
       200,
-      {
-        status: "ok",
-        service: "ModernPOS"
-      },
+      { status: "ok", service: "ModernPOS" },
       req.method
     );
+
+    return true;
+  }
+
+  if (pathname === "/api/health/database") {
+    try {
+      db.prepare("SELECT 1 AS ok").get();
+
+      const migration = db.prepare(`
+        SELECT MAX(version) AS version
+        FROM schema_migrations
+      `).get();
+
+      sendJson(
+        res,
+        200,
+        {
+          status: "ok",
+          database: "connected",
+          schemaVersion: migration.version
+        },
+        req.method
+      );
+    } catch {
+      sendJson(
+        res,
+        503,
+        {
+          error: {
+            code: "DATABASE_UNAVAILABLE",
+            message: "The database is currently unavailable."
+          }
+        },
+        req.method
+      );
+    }
 
     return true;
   }

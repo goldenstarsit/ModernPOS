@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -24,12 +27,29 @@ async function getAvailablePort() {
   return port;
 }
 
-async function startServer(port) {
+async function startServer(port, t) {
   const baseUrl = `http://${HOST}:${port}`;
+  const directory = mkdtempSync(join(tmpdir(), "modernpos-http-"));
+  const databasePath = join(directory, "test.sqlite");
   const child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, HOST, PORT: String(port) },
+    env: {
+      ...process.env,
+      HOST,
+      PORT: String(port),
+      DATABASE_PATH: databasePath
+    },
     stdio: "ignore"
+  });
+
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGTERM");
+      await exited;
+    }
+
+    rmSync(directory, { recursive: true, force: true });
   });
 
   try {
@@ -58,11 +78,7 @@ async function startServer(port) {
 
 test("static server preserves basic HTTP behavior", async (t) => {
   const port = await getAvailablePort();
-  const { child, baseUrl } = await startServer(port);
-
-  t.after(() => {
-    child.kill();
-  });
+  const { baseUrl } = await startServer(port, t);
 
   const homepage = await fetch(baseUrl);
   assert.equal(homepage.status, 200);
@@ -85,11 +101,7 @@ test("static server preserves basic HTTP behavior", async (t) => {
 
 test("health endpoint returns JSON success", async (t) => {
   const port = await getAvailablePort();
-  const { child, baseUrl } = await startServer(port);
-
-  t.after(() => {
-    child.kill();
-  });
+  const { baseUrl } = await startServer(port, t);
 
   const response = await fetch(`${baseUrl}/api/health`);
 
@@ -110,11 +122,7 @@ test("health endpoint returns JSON success", async (t) => {
 
 test("unknown API routes return a JSON 404", async (t) => {
   const port = await getAvailablePort();
-  const { child, baseUrl } = await startServer(port);
-
-  t.after(() => {
-    child.kill();
-  });
+  const { baseUrl } = await startServer(port, t);
 
   const response = await fetch(`${baseUrl}/api/unknown`);
 
@@ -129,11 +137,7 @@ test("unknown API routes return a JSON 404", async (t) => {
 
 test("unsupported API methods return a JSON 405", async (t) => {
   const port = await getAvailablePort();
-  const { child, baseUrl } = await startServer(port);
-
-  t.after(() => {
-    child.kill();
-  });
+  const { baseUrl } = await startServer(port, t);
 
   const response = await fetch(`${baseUrl}/api/health`, {
     method: "POST"
@@ -151,11 +155,7 @@ test("unsupported API methods return a JSON 405", async (t) => {
 
 test("health endpoint supports HEAD without a response body", async (t) => {
   const port = await getAvailablePort();
-  const { child, baseUrl } = await startServer(port);
-
-  t.after(() => {
-    child.kill();
-  });
+  const { baseUrl } = await startServer(port, t);
 
   const response = await fetch(`${baseUrl}/api/health`, {
     method: "HEAD"
@@ -167,4 +167,18 @@ test("health endpoint supports HEAD without a response body", async (t) => {
     /application\/json/
   );
   assert.equal(await response.text(), "");
+});
+
+test("database health endpoint confirms SQLite connectivity", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const response = await fetch(`${baseUrl}/api/health/database`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    status: "ok",
+    database: "connected",
+    schemaVersion: 1
+  });
 });
