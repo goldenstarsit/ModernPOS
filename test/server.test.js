@@ -182,3 +182,19 @@ test("database health endpoint confirms SQLite connectivity", async (t) => {
     schemaVersion: 1
   });
 });
+
+test("database health endpoint supports HEAD without a response body", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const response = await fetch(`${baseUrl}/api/health/database`, {
+    method: "HEAD"
+  });
+
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") || "",
+    /application\/json/
+  );
+  assert.equal(await response.text(), "");
+});
