@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleApiRequest } from "./api.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = resolve(ROOT, "public");
@@ -21,12 +22,6 @@ const contentTypes = {
 };
 
 const server = createServer(async (req, res) => {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    res.writeHead(405, { Allow: "GET, HEAD" });
-    res.end("Method Not Allowed");
-    return;
-  }
-
   let pathname;
 
   try {
@@ -36,6 +31,14 @@ const server = createServer(async (req, res) => {
   } catch {
     res.writeHead(400);
     res.end("Bad Request");
+    return;
+  }
+
+  if (handleApiRequest(req, res, pathname)) return;
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { Allow: "GET, HEAD" });
+    res.end("Method Not Allowed");
     return;
   }
 
@@ -58,6 +61,7 @@ const server = createServer(async (req, res) => {
     if (!info.isFile()) throw new Error("Not a file");
 
     const content = await readFile(filePath);
+
     res.writeHead(200, {
       "Content-Type":
         contentTypes[extname(filePath).toLowerCase()] ||
@@ -68,7 +72,9 @@ const server = createServer(async (req, res) => {
 
     res.end(req.method === "HEAD" ? undefined : content);
   } catch {
-    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(404, {
+      "Content-Type": "text/plain; charset=utf-8"
+    });
     res.end("Not Found");
   }
 });

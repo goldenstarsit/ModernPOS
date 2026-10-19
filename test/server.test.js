@@ -40,6 +40,7 @@ async function startServer(port) {
 
       try {
         const response = await fetch(baseUrl);
+
         if (response.ok) return { child, baseUrl };
       } catch {
         // The server may still be starting.
@@ -55,7 +56,7 @@ async function startServer(port) {
   }
 }
 
-test("static server responds correctly to basic HTTP requests", async (t) => {
+test("static server preserves basic HTTP behavior", async (t) => {
   const port = await getAvailablePort();
   const { child, baseUrl } = await startServer(port);
 
@@ -80,4 +81,90 @@ test("static server responds correctly to basic HTTP requests", async (t) => {
   const unsupported = await fetch(baseUrl, { method: "POST" });
   assert.equal(unsupported.status, 405);
   assert.match(unsupported.headers.get("allow") || "", /GET/);
+});
+
+test("health endpoint returns JSON success", async (t) => {
+  const port = await getAvailablePort();
+  const { child, baseUrl } = await startServer(port);
+
+  t.after(() => {
+    child.kill();
+  });
+
+  const response = await fetch(`${baseUrl}/api/health`);
+
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") || "",
+    /application\/json/
+  );
+  assert.equal(
+    response.headers.get("x-content-type-options"),
+    "nosniff"
+  );
+  assert.deepEqual(await response.json(), {
+    status: "ok",
+    service: "ModernPOS"
+  });
+});
+
+test("unknown API routes return a JSON 404", async (t) => {
+  const port = await getAvailablePort();
+  const { child, baseUrl } = await startServer(port);
+
+  t.after(() => {
+    child.kill();
+  });
+
+  const response = await fetch(`${baseUrl}/api/unknown`);
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "NOT_FOUND",
+      message: "API route not found."
+    }
+  });
+});
+
+test("unsupported API methods return a JSON 405", async (t) => {
+  const port = await getAvailablePort();
+  const { child, baseUrl } = await startServer(port);
+
+  t.after(() => {
+    child.kill();
+  });
+
+  const response = await fetch(`${baseUrl}/api/health`, {
+    method: "POST"
+  });
+
+  assert.equal(response.status, 405);
+  assert.match(response.headers.get("allow") || "", /GET/);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "METHOD_NOT_ALLOWED",
+      message: "This HTTP method is not supported."
+    }
+  });
+});
+
+test("health endpoint supports HEAD without a response body", async (t) => {
+  const port = await getAvailablePort();
+  const { child, baseUrl } = await startServer(port);
+
+  t.after(() => {
+    child.kill();
+  });
+
+  const response = await fetch(`${baseUrl}/api/health`, {
+    method: "HEAD"
+  });
+
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") || "",
+    /application\/json/
+  );
+  assert.equal(await response.text(), "");
 });
