@@ -1,0 +1,12 @@
+{
+  "name": "modernpos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An extensible business point-of-sale platform",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  }
+}
