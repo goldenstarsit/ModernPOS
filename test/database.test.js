@@ -350,6 +350,21 @@ test("stock movements update batch quantities and preserve immutable history", (
         .get(batchId).quantity_on_hand,
       70
     );
+
+    const movementAfterRejectedMutations = db.prepare(`
+      SELECT movement_type, quantity, notes
+      FROM stock_movements
+      WHERE batch_id = ?
+      ORDER BY id
+    `).all(batchId);
+
+    assert.deepEqual(
+      movementAfterRejectedMutations.map((row) => ({ ...row })),
+      [
+        { movement_type: "purchase", quantity: 100, notes: "Initial delivery" },
+        { movement_type: "sale", quantity: 30, notes: "Customer sale" }
+      ]
+    );
   } finally {
     db.close();
   }
