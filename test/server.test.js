@@ -464,6 +464,17 @@ test("stock movement API records and protects stock", async (t) => {
     "INSUFFICIENT_STOCK"
   );
 
+  const historyAfterRejectedSale = await fetch(
+    `${baseUrl}/api/stock-movements?batch_id=${batchId}&limit=100&offset=0`
+  );
+  assert.equal(historyAfterRejectedSale.status, 200);
+  const rejectedSaleHistoryBody = await historyAfterRejectedSale.json();
+  assert.equal(rejectedSaleHistoryBody.pagination.total, 2);
+  assert.equal(
+    rejectedSaleHistoryBody.data[0].current_quantity_on_hand,
+    70
+  );
+
   const invalidMovement = await createMovement({
     batch_id: batchId,
     movement_type: "unknown_type",
