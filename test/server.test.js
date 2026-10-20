@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import { openDatabase } from "../db/database.js";
 
 const HOST = "127.0.0.1";
 
@@ -28,10 +29,20 @@ async function getAvailablePort() {
   return port;
 }
 
-async function startServer(port, t) {
+async function startServer(port, t, setupDatabase) {
   const baseUrl = `http://${HOST}:${port}`;
   const directory = mkdtempSync(join(tmpdir(), "modernpos-http-"));
   const databasePath = join(directory, "test.sqlite");
+
+  if (setupDatabase) {
+    const db = openDatabase(databasePath);
+    try {
+      setupDatabase(db);
+    } finally {
+      db.close();
+    }
+  }
+
   const child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: {
@@ -180,7 +191,7 @@ test("database health endpoint confirms SQLite connectivity", async (t) => {
   assert.deepEqual(await response.json(), {
     status: "ok",
     database: "connected",
-    schemaVersion: 2
+    schemaVersion: 6
   });
 });
 
@@ -383,4 +394,200 @@ test("products API rejects oversized chunked request bodies", async (t) => {
 
   const health = await fetch(`${baseUrl}/api/health`);
   assert.equal(health.status, 200);
+});
+
+
+test("stock movement API records and protects stock", async (t) => {
+  const port = await getAvailablePort();
+  let batchId;
+
+  const { baseUrl } = await startServer(port, t, (db) => {
+    const product = db.prepare(`
+      INSERT INTO products (sku, name)
+      VALUES (?, ?)
+    `).run("TEST-STOCK-001", "Integration Test Product");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, ?)
+    `).run(
+      Number(product.lastInsertRowid),
+      "TEST-BATCH-001",
+      "2030-12-31",
+      0
+    );
+
+    batchId = Number(batch.lastInsertRowid);
+  });
+
+  async function createMovement(payload) {
+    return fetch(`${baseUrl}/api/stock-movements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  const purchase = await createMovement({
+    batch_id: batchId,
+    movement_type: "purchase",
+    quantity: 100,
+    reference: "TEST-PURCHASE"
+  });
+
+  assert.equal(purchase.status, 201);
+  const purchaseBody = await purchase.json();
+  assert.equal(purchaseBody.data.current_quantity_on_hand, 100);
+  assert.equal(purchaseBody.data.movement_type, "purchase");
+
+  const sale = await createMovement({
+    batch_id: batchId,
+    movement_type: "sale",
+    quantity: 30,
+    reference: "TEST-SALE"
+  });
+
+  assert.equal(sale.status, 201);
+  const saleBody = await sale.json();
+  assert.equal(saleBody.data.current_quantity_on_hand, 70);
+
+  const excessiveSale = await createMovement({
+    batch_id: batchId,
+    movement_type: "sale",
+    quantity: 71
+  });
+
+  assert.equal(excessiveSale.status, 409);
+  assert.equal(
+    (await excessiveSale.json()).error.code,
+    "INSUFFICIENT_STOCK"
+  );
+
+  const invalidMovement = await createMovement({
+    batch_id: batchId,
+    movement_type: "unknown_type",
+    quantity: 1
+  });
+
+  assert.equal(invalidMovement.status, 400);
+  assert.equal(
+    (await invalidMovement.json()).error.code,
+    "VALIDATION_ERROR"
+  );
+
+  const missingBatch = await createMovement({
+    batch_id: 999999999,
+    movement_type: "purchase",
+    quantity: 1
+  });
+
+  assert.equal(missingBatch.status, 404);
+  assert.equal(
+    (await missingBatch.json()).error.code,
+    "BATCH_NOT_FOUND"
+  );
+
+  const history = await fetch(
+    `${baseUrl}/api/stock-movements?batch_id=${batchId}&limit=1&offset=0`
+  );
+
+  assert.equal(history.status, 200);
+  const historyBody = await history.json();
+
+  assert.equal(historyBody.pagination.total, 2);
+  assert.equal(historyBody.pagination.limit, 1);
+  assert.equal(historyBody.pagination.offset, 0);
+  assert.equal(historyBody.data.length, 1);
+  assert.equal(historyBody.data[0].movement_type, "sale");
+  assert.equal(historyBody.data[0].current_quantity_on_hand, 70);
+
+  const allHistory = await fetch(
+    `${baseUrl}/api/stock-movements?batch_id=${batchId}`
+  );
+  const allHistoryBody = await allHistory.json();
+
+  assert.equal(allHistoryBody.pagination.total, 2);
+  assert.deepEqual(
+    allHistoryBody.data.map((movement) => movement.movement_type),
+    ["sale", "purchase"]
+  );
+
+  const reachSafeLimit = await createMovement({
+    batch_id: batchId,
+    movement_type: "purchase",
+    quantity: Number.MAX_SAFE_INTEGER - 70
+  });
+
+  assert.equal(reachSafeLimit.status, 201);
+  assert.equal(
+    (await reachSafeLimit.json()).data.current_quantity_on_hand,
+    Number.MAX_SAFE_INTEGER
+  );
+
+  const overflow = await createMovement({
+    batch_id: batchId,
+    movement_type: "purchase",
+    quantity: 1
+  });
+
+  assert.equal(overflow.status, 409);
+  assert.equal((await overflow.json()).error.code, "STOCK_BALANCE_LIMIT");
+
+  const finalHistory = await fetch(
+    `${baseUrl}/api/stock-movements?batch_id=${batchId}`
+  );
+  const finalBody = await finalHistory.json();
+
+  assert.equal(finalBody.pagination.total, 3);
+  assert.equal(
+    finalBody.data[0].current_quantity_on_hand,
+    Number.MAX_SAFE_INTEGER
+  );
+});
+
+test("stock movement API validates query parameters and HTTP methods", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const invalidCases = [
+    ["limit=0", "INVALID_LIMIT"],
+    ["offset=-1", "INVALID_OFFSET"],
+    ["batch_id=abc", "INVALID_BATCH_ID"]
+  ];
+
+  for (const [query, expectedCode] of invalidCases) {
+    const response = await fetch(
+      `${baseUrl}/api/stock-movements?${query}`
+    );
+
+    assert.equal(response.status, 400, query);
+    assert.equal(
+      (await response.json()).error.code,
+      expectedCode,
+      query
+    );
+  }
+
+  const head = await fetch(`${baseUrl}/api/stock-movements`, {
+    method: "HEAD"
+  });
+
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+
+  const unsupported = await fetch(
+    `${baseUrl}/api/stock-movements`,
+    { method: "PUT" }
+  );
+
+  assert.equal(unsupported.status, 405);
+  assert.match(
+    unsupported.headers.get("allow") || "",
+    /GET.*HEAD.*POST/
+  );
+  assert.equal(
+    (await unsupported.json()).error.code,
+    "METHOD_NOT_ALLOWED"
+  );
 });

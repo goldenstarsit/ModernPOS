@@ -1,3 +1,8 @@
+import {
+  createStockMovement,
+  listStockMovements
+} from "./services/stockMovementService.js";
+
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_LIMIT = 100;
 
@@ -323,6 +328,98 @@ async function createProduct(req, res, db) {
   }
 }
 
+
+function listStockMovementsApi(req, res, db) {
+  const url = new URL(req.url, "http://localhost");
+  const rawLimit = url.searchParams.get("limit") ?? "50";
+  const rawOffset = url.searchParams.get("offset") ?? "0";
+  const rawBatchId = url.searchParams.get("batch_id");
+
+  const limit = parsePositiveInteger(rawLimit);
+  const offset = /^(0|[1-9]\d*)$/.test(rawOffset)
+    ? Number(rawOffset)
+    : null;
+  const batchId = rawBatchId === null
+    ? null
+    : parsePositiveInteger(rawBatchId);
+
+  if (limit === null || limit > MAX_LIMIT) {
+    sendError(
+      res, 400, "INVALID_LIMIT",
+      `limit must be an integer between 1 and ${MAX_LIMIT}.`,
+      req.method
+    );
+    return;
+  }
+
+  if (offset === null || !Number.isSafeInteger(offset)) {
+    sendError(
+      res, 400, "INVALID_OFFSET",
+      "offset must be a non-negative integer.",
+      req.method
+    );
+    return;
+  }
+
+  if (rawBatchId !== null && batchId === null) {
+    sendError(
+      res, 400, "INVALID_BATCH_ID",
+      "batch_id must be a positive integer.",
+      req.method
+    );
+    return;
+  }
+
+  try {
+    const result = listStockMovements(db, {
+      batchId,
+      limit,
+      offset
+    });
+    sendJson(res, 200, result, req.method);
+  } catch {
+    sendError(
+      res, 500, "DATABASE_ERROR",
+      "Unable to retrieve stock movements.",
+      req.method
+    );
+  }
+}
+
+async function createStockMovementApi(req, res, db) {
+  const parsed = await readJsonBody(req);
+
+  if (parsed.error) {
+    sendError(
+      res, parsed.status, "INVALID_REQUEST_BODY",
+      parsed.error, req.method
+    );
+    return;
+  }
+
+  try {
+    const movement = createStockMovement(db, parsed.value);
+    sendJson(res, 201, { data: movement }, req.method);
+  } catch (error) {
+    if (
+      error &&
+      typeof error.status === "number" &&
+      typeof error.code === "string"
+    ) {
+      sendError(
+        res, error.status, error.code, error.message, req.method
+      );
+      return;
+    }
+
+    sendError(
+      res, 500, "DATABASE_ERROR",
+      "Unable to record the stock movement.",
+      req.method
+    );
+  }
+}
+
 export async function handleApiRequest(req, res, pathname, db) {
   if (pathname !== "/api" && !pathname.startsWith("/api/")) {
     return false;
@@ -330,8 +427,10 @@ export async function handleApiRequest(req, res, pathname, db) {
 
   const productCollection = pathname === "/api/products";
   const productItem = /^\/api\/products\/([^/]+)$/.exec(pathname);
+  const stockMovementCollection = pathname === "/api/stock-movements";
   const isReadMethod = req.method === "GET" || req.method === "HEAD";
-  const isCreateMethod = req.method === "POST" && productCollection;
+  const isCreateMethod = req.method === "POST" &&
+    (productCollection || stockMovementCollection);
 
   if (!isReadMethod && !isCreateMethod) {
     sendError(
@@ -339,7 +438,7 @@ export async function handleApiRequest(req, res, pathname, db) {
       "This HTTP method is not supported.",
       req.method,
       {
-        Allow: productCollection
+        Allow: productCollection || stockMovementCollection
           ? "GET, HEAD, POST"
           : productItem
             ? "GET, HEAD"
@@ -391,7 +490,17 @@ export async function handleApiRequest(req, res, pathname, db) {
     return true;
   }
 
-  if (isCreateMethod) {
+  if (stockMovementCollection && isReadMethod) {
+    listStockMovementsApi(req, res, db);
+    return true;
+  }
+
+  if (req.method === "POST" && stockMovementCollection) {
+    await createStockMovementApi(req, res, db);
+    return true;
+  }
+
+  if (isCreateMethod && productCollection) {
     await createProduct(req, res, db);
     return true;
   }
