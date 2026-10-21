@@ -280,6 +280,56 @@ test("products API creates, lists, retrieves, and rejects duplicate SKUs", async
   assert.equal(await head.text(), "");
 });
 
+test("product API returns correct pages for non-zero offsets", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const ids = [];
+
+  for (let index = 1; index <= 3; index += 1) {
+    const response = await fetch(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sku: `PAGE-${index}`,
+        name: `Pagination Product ${index}`
+      })
+    });
+
+    assert.equal(response.status, 201);
+    ids.push((await response.json()).data.id);
+  }
+
+  const firstPageResponse = await fetch(
+    `${baseUrl}/api/products?limit=1&offset=0`
+  );
+  assert.equal(firstPageResponse.status, 200);
+  const firstPage = await firstPageResponse.json();
+
+  assert.equal(firstPage.pagination.total, 3);
+  assert.equal(firstPage.pagination.offset, 0);
+  assert.deepEqual(firstPage.data.map((product) => product.id), [ids[2]]);
+
+  const secondPageResponse = await fetch(
+    `${baseUrl}/api/products?limit=2&offset=1`
+  );
+  assert.equal(secondPageResponse.status, 200);
+  const secondPage = await secondPageResponse.json();
+
+  assert.equal(secondPage.pagination.limit, 2);
+  assert.equal(secondPage.pagination.offset, 1);
+  assert.equal(secondPage.pagination.total, 3);
+  assert.deepEqual(
+    secondPage.data.map((product) => product.id),
+    [ids[1], ids[0]]
+  );
+  assert.ok(
+    !firstPage.data.some((first) =>
+      secondPage.data.some((second) => second.id === first.id)
+    ),
+    "the second page must not repeat products from the first page"
+  );
+});
+
 test("products API rejects invalid input and pagination parameters", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
@@ -549,6 +599,19 @@ test("stock movement API records and protects stock", async (t) => {
   assert.equal(historyBody.data.length, 1);
   assert.equal(historyBody.data[0].movement_type, "sale");
   assert.equal(historyBody.data[0].current_quantity_on_hand, 70);
+
+  const secondPage = await fetch(
+    `${baseUrl}/api/stock-movements?batch_id=${batchId}&limit=1&offset=1`
+  );
+  assert.equal(secondPage.status, 200);
+  const secondPageBody = await secondPage.json();
+
+  assert.equal(secondPageBody.pagination.limit, 1);
+  assert.equal(secondPageBody.pagination.offset, 1);
+  assert.equal(secondPageBody.pagination.total, 2);
+  assert.equal(secondPageBody.data.length, 1);
+  assert.equal(secondPageBody.data[0].movement_type, "purchase");
+  assert.equal(secondPageBody.data[0].current_quantity_on_hand, 70);
 
   const allHistory = await fetch(
     `${baseUrl}/api/stock-movements?batch_id=${batchId}`
