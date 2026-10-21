@@ -108,16 +108,48 @@ test("stock movements reject balances above the JavaScript safe integer limit", 
   }
 });
 
-test("database preserves metadata after reopening", (t) => {
+test("database preserves metadata and stock ledger after reopening", (t) => {
   const path = createTestDatabase(t);
-
   const first = openDatabase(path);
+  let batchId;
 
   try {
     first.prepare(`
       INSERT INTO app_metadata (key, value)
       VALUES (?, ?)
     `).run("test.setting", "saved-value");
+
+    const product = first.prepare(`
+      INSERT INTO products (sku, name)
+      VALUES (?, ?)
+    `).run("REOPEN-STOCK-001", "Reopening Stock Test");
+
+    const batch = first.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, 0)
+    `).run(
+      Number(product.lastInsertRowid),
+      "REOPEN-BATCH-001",
+      "2030-12-31"
+    );
+
+    batchId = Number(batch.lastInsertRowid);
+
+    const addMovement = first.prepare(`
+      INSERT INTO stock_movements (batch_id, movement_type, quantity)
+      VALUES (?, ?, ?)
+    `);
+
+    addMovement.run(batchId, "purchase", 100);
+    addMovement.run(batchId, "sale", 30);
+
+    assert.equal(
+      first.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      70
+    );
   } finally {
     first.close();
   }
@@ -134,12 +166,47 @@ test("database preserves metadata after reopening", (t) => {
     assert.equal(row.key, "test.setting");
     assert.equal(row.value, "saved-value");
     assert.ok(row.updated_at);
+
     assert.equal(
       second.prepare(
         "SELECT COUNT(*) AS count FROM schema_migrations"
       ).get().count,
       6
     );
+
+    assert.equal(
+      second.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      70
+    );
+
+    const movements = second.prepare(`
+      SELECT movement_type, quantity
+      FROM stock_movements
+      WHERE batch_id = ?
+      ORDER BY id
+    `).all(batchId);
+
+    assert.deepEqual(movements.map((row) => ({ ...row })), [
+      { movement_type: "purchase", quantity: 100 },
+      { movement_type: "sale", quantity: 30 }
+    ]);
+
+    const ledgerBalance = second.prepare(`
+      SELECT SUM(
+        CASE
+          WHEN movement_type IN (
+            'opening_stock', 'purchase', 'customer_return', 'adjustment_in'
+          ) THEN quantity
+          ELSE -quantity
+        END
+      ) AS balance
+      FROM stock_movements
+      WHERE batch_id = ?
+    `).get(batchId).balance;
+
+    assert.equal(ledgerBalance, 70);
   } finally {
     second.close();
   }
