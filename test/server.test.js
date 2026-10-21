@@ -879,6 +879,34 @@ test("stock movement API validates query parameters and HTTP methods", async (t)
   );
 });
 
+test("OPTIONS requests return exact allowed methods for API routes", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const cases = [
+    ["/api/products", "GET, HEAD, POST"],
+    ["/api/products/1", "GET, HEAD"],
+    ["/api/stock-movements", "GET, HEAD, POST"],
+    ["/api/health", "GET, HEAD"]
+  ];
+
+  for (const [path, expectedAllow] of cases) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "OPTIONS"
+    });
+
+    assert.equal(response.status, 405, path);
+    assert.equal(
+      response.headers.get("allow"),
+      expectedAllow,
+      path
+    );
+
+    const body = await response.json();
+    assert.equal(body.error.code, "METHOD_NOT_ALLOWED", path);
+  }
+});
+
 test("products API enforces search query length boundaries", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
