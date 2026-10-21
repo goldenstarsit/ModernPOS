@@ -330,6 +330,41 @@ test("product API returns correct pages for non-zero offsets", async (t) => {
   );
 });
 
+test("product and stock movement APIs reject invalid pagination offsets", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const invalidOffsets = [
+    "-1",
+    "1.5",
+    "01",
+    "9007199254740992"
+  ];
+  const endpoints = [
+    "/api/products",
+    "/api/stock-movements"
+  ];
+
+  for (const endpoint of endpoints) {
+    for (const offset of invalidOffsets) {
+      const response = await fetch(
+        `${baseUrl}${endpoint}?offset=${offset}`
+      );
+      const body = await response.json();
+
+      assert.equal(
+        response.status,
+        400,
+        `${endpoint} should reject offset=${offset}`
+      );
+      assert.equal(
+        body.error.code,
+        "INVALID_OFFSET",
+        `${endpoint} should return INVALID_OFFSET for offset=${offset}`
+      );
+    }
+  }
+});
+
 test("products API rejects invalid input and pagination parameters", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
