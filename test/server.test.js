@@ -982,6 +982,16 @@ test("products API treats underscores in search queries literally", async (t) =>
   assert.equal(body.pagination.total, 1);
 });
 
+test("static server blocks encoded path traversal", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const response = await fetch(`${baseUrl}/%2e%2e%2fserver.js`);
+
+  assert.equal(response.status, 403);
+  assert.equal(await response.text(), "Forbidden");
+});
+
 test("malformed URL encoding returns 400 and server remains healthy", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
