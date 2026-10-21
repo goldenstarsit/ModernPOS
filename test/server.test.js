@@ -982,6 +982,32 @@ test("products API treats underscores in search queries literally", async (t) =>
   assert.equal(body.pagination.total, 1);
 });
 
+test("static server blocks symbolic links outside public", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const outsideDirectory = mkdtempSync(join(tmpdir(), "modernpos-outside-"));
+  const outsideFile = join(outsideDirectory, "secret.txt");
+  const linkPath = join(process.cwd(), "public", "lesson-21-link-test.txt");
+
+  try {
+    await import("node:fs/promises").then(({ writeFile, symlink }) =>
+      Promise.all([
+        writeFile(outsideFile, "outside-public-secret"),
+        symlink(outsideFile, linkPath)
+      ])
+    );
+
+    const response = await fetch(`${baseUrl}/lesson-21-link-test.txt`);
+    const body = await response.text();
+
+    assert.notEqual(response.status, 200);
+    assert.notEqual(body, "outside-public-secret");
+  } finally {
+    rmSync(linkPath, { force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
 test("static server blocks encoded path traversal", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);

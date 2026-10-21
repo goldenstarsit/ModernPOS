@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api.js";
@@ -60,15 +60,29 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    const info = await stat(filePath);
+    const realPublicDir = await realpath(PUBLIC_DIR);
+    const realFilePath = await realpath(filePath);
+
+    if (
+      realFilePath !== realPublicDir &&
+      !realFilePath.startsWith(realPublicDir + sep)
+    ) {
+      res.writeHead(403, {
+        "Content-Type": "text/plain; charset=utf-8"
+      });
+      res.end("Forbidden");
+      return;
+    }
+
+    const info = await stat(realFilePath);
 
     if (!info.isFile()) throw new Error("Not a file");
 
-    const content = await readFile(filePath);
+    const content = await readFile(realFilePath);
 
     res.writeHead(200, {
       "Content-Type":
-        contentTypes[extname(filePath).toLowerCase()] ||
+        contentTypes[extname(realFilePath).toLowerCase()] ||
         "application/octet-stream",
       "Content-Length": content.length,
       "X-Content-Type-Options": "nosniff"
