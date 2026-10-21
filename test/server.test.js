@@ -594,6 +594,25 @@ test("stock movement API records and protects stock", async (t) => {
   );
 });
 
+test("product and stock movement APIs reject unsafe pagination offsets", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const unsafeOffset = Number.MAX_SAFE_INTEGER + 1;
+
+  for (const path of ["/api/products", "/api/stock-movements"]) {
+    const response = await fetch(
+      `${baseUrl}${path}?offset=${unsafeOffset}`
+    );
+
+    assert.equal(response.status, 400, path);
+    assert.equal(
+      (await response.json()).error.code,
+      "INVALID_OFFSET",
+      path
+    );
+  }
+});
+
 test("stock movement API validates query parameters and HTTP methods", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
