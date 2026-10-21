@@ -165,6 +165,34 @@ test("unsupported API methods return a JSON 405", async (t) => {
   });
 });
 
+test("API routes return exact Allow headers for unsupported methods", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const cases = [
+    { path: "/api/products", allow: "GET, HEAD, POST" },
+    { path: "/api/stock-movements", allow: "GET, HEAD, POST" },
+    { path: "/api/products/1", allow: "GET, HEAD" },
+    { path: "/api/health", allow: "GET, HEAD" }
+  ];
+
+  for (const item of cases) {
+    const response = await fetch(`${baseUrl}${item.path}`, {
+      method: "PUT"
+    });
+
+    assert.equal(response.status, 405, item.path);
+    assert.equal(
+      response.headers.get("allow"),
+      item.allow,
+      item.path
+    );
+
+    const body = await response.json();
+    assert.equal(body.error.code, "METHOD_NOT_ALLOWED", item.path);
+  }
+});
+
 test("health endpoint supports HEAD without a response body", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
