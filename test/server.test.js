@@ -982,6 +982,26 @@ test("products API treats underscores in search queries literally", async (t) =>
   assert.equal(body.pagination.total, 1);
 });
 
+test("static server rejects directory paths", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const directoryPath = mkdtempSync(
+    join(process.cwd(), "public", "lesson-24-directory-")
+  );
+  const directoryName = directoryPath.slice(
+    directoryPath.lastIndexOf("/") + 1
+  );
+
+  try {
+    const response = await fetch(`${baseUrl}/${directoryName}`);
+
+    assert.equal(response.status, 404);
+    assert.equal(await response.text(), "Not Found");
+  } finally {
+    rmSync(directoryPath, { recursive: true, force: true });
+  }
+});
+
 test("static server blocks symbolic links outside public", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
