@@ -613,6 +613,32 @@ test("product and stock movement APIs reject unsafe pagination offsets", async (
   }
 });
 
+test("product and stock movement APIs reject invalid pagination limits", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const invalidLimits = [
+    "abc",
+    "1.5",
+    "101",
+    "9007199254740992"
+  ];
+
+  for (const path of ["/api/products", "/api/stock-movements"]) {
+    for (const limit of invalidLimits) {
+      const response = await fetch(
+        `${baseUrl}${path}?limit=${limit}`
+      );
+
+      assert.equal(response.status, 400, `${path}?limit=${limit}`);
+      assert.equal(
+        (await response.json()).error.code,
+        "INVALID_LIMIT",
+        `${path}?limit=${limit}`
+      );
+    }
+  }
+});
+
 test("stock movement API validates query parameters and HTTP methods", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
