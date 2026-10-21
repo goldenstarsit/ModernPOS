@@ -332,6 +332,43 @@ test("products API rejects invalid input and pagination parameters", async (t) =
 });
 
 
+test("products API rejects invalid product field boundaries without inserting records", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const invalidProducts = [
+    { name: "x".repeat(201) },
+    { name: "Invalid SKU", sku: "S".repeat(101) },
+    { name: "Invalid description", description: "x".repeat(2001) },
+    { name: "Invalid unit", unit: "   " },
+    { name: "Unsafe cost", cost_price_paisa: Number.MAX_SAFE_INTEGER + 1 },
+    { name: "Fractional sale price", sale_price_paisa: 1.5 },
+    { name: "Invalid active flag", is_active: "false" }
+  ];
+
+  for (const product of invalidProducts) {
+    const response = await fetch(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(product)
+    });
+
+    assert.equal(
+      response.status,
+      400,
+      `Expected invalid product to be rejected: ${product.name}`
+    );
+    assert.equal(
+      (await response.json()).error.code,
+      "VALIDATION_ERROR"
+    );
+  }
+
+  const list = await fetch(`${baseUrl}/api/products?limit=10&offset=0`);
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).pagination.total, 0);
+});
+
 test("products API enforces the request body size limit", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
