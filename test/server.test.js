@@ -594,6 +594,25 @@ test("stock movement API records and protects stock", async (t) => {
   );
 });
 
+test("product and stock movement APIs accept the maximum pagination limit", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  for (const path of ["/api/products", "/api/stock-movements"]) {
+    const response = await fetch(
+      `${baseUrl}${path}?limit=100&offset=0`
+    );
+
+    assert.equal(response.status, 200, path);
+
+    const body = await response.json();
+    assert.equal(body.pagination.limit, 100, path);
+    assert.equal(body.pagination.offset, 0, path);
+    assert.equal(body.pagination.total, 0, path);
+    assert.deepEqual(body.data, [], path);
+  }
+});
+
 test("product and stock movement APIs reject unsafe pagination offsets", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
