@@ -211,6 +211,36 @@ test("database health endpoint supports HEAD without a response body", async (t)
   assert.equal(await response.text(), "");
 });
 
+test("API HEAD error responses return status and headers without a body", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const cases = [
+    { path: "/api/products?offset=-1", status: 400 },
+    { path: "/api/stock-movements?offset=-1", status: 400 },
+    { path: "/api/not-a-real-route", status: 404 }
+  ];
+
+  for (const { path, status } of cases) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "HEAD"
+    });
+
+    assert.equal(response.status, status, path);
+    assert.match(
+      response.headers.get("content-type") || "",
+      /application\/json/,
+      path
+    );
+    assert.equal(
+      response.headers.get("x-content-type-options"),
+      "nosniff",
+      path
+    );
+    assert.equal(await response.text(), "", path);
+  }
+});
+
 test("products API creates, lists, retrieves, and rejects duplicate SKUs", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
