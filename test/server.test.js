@@ -108,7 +108,8 @@ test("static server preserves basic HTTP behavior", async (t) => {
 
   const unsupported = await fetch(baseUrl, { method: "POST" });
   assert.equal(unsupported.status, 405);
-  assert.match(unsupported.headers.get("allow") || "", /GET/);
+  assert.equal(unsupported.headers.get("allow"), "GET, HEAD");
+  assert.equal(await unsupported.text(), "Method Not Allowed");
 });
 
 test("health endpoint returns JSON success", async (t) => {
