@@ -183,8 +183,13 @@ function listProducts(req, res, db) {
   }
 
   try {
-    const where = query ? "WHERE name LIKE ? OR sku LIKE ?" : "";
-    const params = query ? [`%${query}%`, `%${query}%`] : [];
+    const escapedQuery = query.replace(/[!%_]/g, "!$&");
+    const where = query
+      ? "WHERE name LIKE ? ESCAPE '!' OR sku LIKE ? ESCAPE '!'"
+      : "";
+    const params = query
+      ? [`%${escapedQuery}%`, `%${escapedQuery}%`]
+      : [];
 
     const total = db.prepare(
       `SELECT COUNT(*) AS total FROM products ${where}`

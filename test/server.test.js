@@ -602,3 +602,53 @@ test("stock movement API validates query parameters and HTTP methods", async (t)
     "METHOD_NOT_ALLOWED"
   );
 });
+
+test("products API treats percent signs in search queries literally", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  for (const name of ["Juice 100% Pure", "Juice 100X Pure"]) {
+    const response = await fetch(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    assert.equal(response.status, 201);
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/products?q=${encodeURIComponent("100%")}`
+  );
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.deepEqual(body.data.map((product) => product.name), [
+    "Juice 100% Pure"
+  ]);
+  assert.equal(body.pagination.total, 1);
+});
+
+test("products API treats underscores in search queries literally", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  for (const name of ["Model A_B Cable", "Model AxB Cable"]) {
+    const response = await fetch(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    assert.equal(response.status, 201);
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/products?q=${encodeURIComponent("A_B")}`
+  );
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.deepEqual(body.data.map((product) => product.name), [
+    "Model A_B Cable"
+  ]);
+  assert.equal(body.pagination.total, 1);
+});
