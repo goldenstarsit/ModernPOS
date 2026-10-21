@@ -47,3 +47,44 @@ test("stock movement listing accepts valid pagination values", () => {
     }
   );
 });
+
+test("stock movement listing preserves valid offset, total, and result rows", () => {
+  const row = {
+    id: 7,
+    batch_id: 3,
+    movement_type: "receipt"
+  };
+
+  const db = {
+    prepare(sql) {
+      return {
+        get(...params) {
+          assert.match(sql, /COUNT\(\*\)/);
+          assert.deepEqual(params, []);
+          return { total: 40 };
+        },
+        all(...params) {
+          assert.match(sql, /ORDER BY sm\.id DESC/);
+          assert.match(sql, /LIMIT \? OFFSET \?/);
+          assert.deepEqual(params, [10, 25]);
+          return [row];
+        }
+      };
+    }
+  };
+
+  const result = listStockMovements(db, {
+    limit: 10,
+    offset: 25
+  });
+
+  assert.deepEqual(result, {
+    data: [row],
+    pagination: {
+      limit: 10,
+      offset: 25,
+      total: 40
+    }
+  });
+  assert.notEqual(result.data[0], row);
+});
