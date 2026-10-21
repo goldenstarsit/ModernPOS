@@ -652,3 +652,21 @@ test("products API treats underscores in search queries literally", async (t) =>
   ]);
   assert.equal(body.pagination.total, 1);
 });
+
+test("malformed URL encoding returns 400 and server remains healthy", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const malformed = await fetch(`${baseUrl}/api/products/%ZZ`);
+
+  assert.equal(malformed.status, 400);
+  assert.equal(await malformed.text(), "Bad Request");
+
+  const health = await fetch(`${baseUrl}/api/health`);
+
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), {
+    status: "ok",
+    service: "ModernPOS"
+  });
+});
