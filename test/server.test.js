@@ -1008,6 +1008,33 @@ test("static server blocks symbolic links outside public", async (t) => {
   }
 });
 
+test("static server blocks directory symbolic links outside public", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+  const outsideDirectory = mkdtempSync(join(tmpdir(), "modernpos-outside-dir-"));
+  const outsideSubdirectory = join(outsideDirectory, "external");
+  const outsideFile = join(outsideSubdirectory, "secret.txt");
+  const linkPath = join(process.cwd(), "public", "lesson-22-directory-link-test");
+
+  try {
+    const { mkdir, writeFile, symlink } = await import("node:fs/promises");
+    await mkdir(outsideSubdirectory);
+    await writeFile(outsideFile, "outside-directory-secret");
+    await symlink(outsideSubdirectory, linkPath, "dir");
+
+    const response = await fetch(
+      `${baseUrl}/lesson-22-directory-link-test/secret.txt`
+    );
+    const body = await response.text();
+
+    assert.equal(response.status, 403);
+    assert.notEqual(body, "outside-directory-secret");
+  } finally {
+    rmSync(linkPath, { force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
 test("static server blocks encoded path traversal", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
