@@ -1,4 +1,5 @@
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -102,6 +103,96 @@ test("stock movements reject balances above the JavaScript safe integer limit", 
         "SELECT COUNT(*) AS count FROM stock_movements WHERE batch_id = ?"
       ).get(batchId).count,
       1
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 5 rolls back when stock ledger SUM exceeds SQLite integer range", (t) => {
+  const path = createTestDatabase(t);
+  let db = openDatabase(path);
+  let batchId;
+
+  try {
+    const product = db.prepare(
+      "INSERT INTO products (sku, name) VALUES (?, ?)"
+    ).run("OVERFLOW-REGRESSION-001", "Overflow Regression Test");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, '2030-12-31', 0)
+    `).run(Number(product.lastInsertRowid), "OVERFLOW-REGRESSION-001");
+
+    batchId = Number(batch.lastInsertRowid);
+
+    db.exec(`
+      DROP TRIGGER stock_movements_validate_stock;
+      DROP TRIGGER stock_movements_apply_stock;
+      DROP TRIGGER stock_movements_no_update;
+      DROP TRIGGER stock_movements_no_delete;
+      DROP TRIGGER product_batches_stock_insert_guard;
+      DROP TRIGGER product_batches_stock_update_guard;
+      DROP TRIGGER stock_movements_validate_safe_balance;
+
+      DELETE FROM schema_migrations WHERE version IN (5, 6);
+    `);
+
+    db.exec(`
+      INSERT INTO stock_movements
+        (batch_id, movement_type, quantity, reference)
+      VALUES
+        (${batchId}, 'purchase', 9223372036854775807, 'overflow-test'),
+        (${batchId}, 'purchase', 1, 'overflow-test');
+    `);
+  } finally {
+    db.close();
+  }
+
+  assert.throws(
+    () => openDatabase(path),
+    /integer overflow/i
+  );
+
+  db = new DatabaseSync(path);
+
+  try {
+    assert.equal(
+      db.prepare(
+        "SELECT version FROM schema_migrations WHERE version = 5"
+      ).get(),
+      undefined
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT version FROM schema_migrations WHERE version = 6"
+      ).get(),
+      undefined
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      0
+    );
+
+    assert.equal(
+      db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM stock_movements
+        WHERE batch_id = ? AND reference = 'migration-v5'
+      `).get(batchId).count,
+      0
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT COUNT(*) AS count FROM stock_movements WHERE batch_id = ?"
+      ).get(batchId).count,
+      2
     );
   } finally {
     db.close();
@@ -638,5 +729,285 @@ test("migration 5 reconciles legacy balances against existing movement ledgers",
     } finally {
       db.close();
     }
+  }
+});
+
+test("failed migration rolls back earlier reconciliation changes", (t) => {
+  const path = createTestDatabase(t);
+  let db = openDatabase(path);
+  let batchId;
+
+  try {
+    const product = db.prepare(
+      "INSERT INTO products (sku, name) VALUES (?, ?)"
+    ).run("MIGRATION-ATOMIC-001", "Migration Atomicity Test");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, 0)
+    `).run(
+      Number(product.lastInsertRowid),
+      "ATOMIC-001",
+      "2030-12-31"
+    );
+
+    batchId = Number(batch.lastInsertRowid);
+
+    db.exec(`
+      DROP TRIGGER product_batches_stock_insert_guard;
+      DROP TRIGGER product_batches_stock_update_guard;
+    `);
+
+    db.prepare(
+      "UPDATE product_batches SET quantity_on_hand = 37 WHERE id = ?"
+    ).run(batchId);
+
+    db.exec(`
+      CREATE TRIGGER product_batches_stock_update_guard
+      BEFORE UPDATE OF quantity_on_hand ON product_batches
+      WHEN 0
+      BEGIN
+        SELECT 1;
+      END;
+    `);
+
+    db.prepare(
+      "DELETE FROM schema_migrations WHERE version = 5"
+    ).run();
+  } finally {
+    db.close();
+  }
+
+  assert.throws(
+    () => openDatabase(path),
+    /product_batches_stock_update_guard already exists/i
+  );
+
+  db = new DatabaseSync(path);
+
+  try {
+    assert.equal(
+      db.prepare(
+        "SELECT version FROM schema_migrations WHERE version = 5"
+      ).get(),
+      undefined
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      37
+    );
+
+    assert.equal(
+      db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM stock_movements
+        WHERE batch_id = ? AND reference = 'migration-v5'
+      `).get(batchId).count,
+      0
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?"
+      ).get("product_batches_stock_insert_guard"),
+      undefined
+    );
+
+    db.exec("DROP TRIGGER product_batches_stock_update_guard");
+  } finally {
+    db.close();
+  }
+
+  db = openDatabase(path);
+
+  try {
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      37
+    );
+
+    assert.deepEqual(
+      db.prepare(`
+        SELECT movement_type, quantity, reference
+        FROM stock_movements
+        WHERE batch_id = ? AND reference = 'migration-v5'
+      `).all(batchId).map((row) => ({ ...row })),
+      [{
+        movement_type: "opening_stock",
+        quantity: 37,
+        reference: "migration-v5"
+      }]
+    );
+
+    assert.deepEqual(
+      db.prepare(
+        "SELECT version FROM schema_migrations ORDER BY version"
+      ).all().map((row) => row.version),
+      [1, 2, 3, 4, 5, 6]
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("failed migration is not recorded and can be retried", (t) => {
+  const path = createTestDatabase(t);
+  let db = openDatabase(path);
+
+  try {
+    db.prepare(
+      "DELETE FROM schema_migrations WHERE version = 6"
+    ).run();
+  } finally {
+    db.close();
+  }
+
+  assert.throws(
+    () => openDatabase(path),
+    /stock_movements_validate_safe_balance already exists/i
+  );
+
+  db = new DatabaseSync(path);
+
+  try {
+    const migration = db.prepare(
+      "SELECT version FROM schema_migrations WHERE version = 6"
+    ).get();
+
+    assert.equal(migration, undefined);
+
+    const trigger = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?"
+    ).get("stock_movements_validate_safe_balance");
+
+    assert.equal(
+      trigger.name,
+      "stock_movements_validate_safe_balance"
+    );
+
+    db.exec("DROP TRIGGER stock_movements_validate_safe_balance");
+  } finally {
+    db.close();
+  }
+
+  db = openDatabase(path);
+
+  try {
+    assert.deepEqual(
+      db.prepare(
+        "SELECT version FROM schema_migrations ORDER BY version"
+      ).all().map((row) => row.version),
+      [1, 2, 3, 4, 5, 6]
+    );
+
+    const trigger = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?"
+    ).get("stock_movements_validate_safe_balance");
+
+    assert.equal(
+      trigger.name,
+      "stock_movements_validate_safe_balance"
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("migration 5 retry does not duplicate reconciliation movements", (t) => {
+  const path = createTestDatabase(t);
+  let db = openDatabase(path);
+  let batchId;
+
+  try {
+    const product = db.prepare(
+      "INSERT INTO products (sku, name) VALUES (?, ?)"
+    ).run("MIGRATION-RETRY-001", "Migration Retry Test");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, 0)
+    `).run(Number(product.lastInsertRowid), "RETRY-001", "2030-12-31");
+
+    batchId = Number(batch.lastInsertRowid);
+
+    db.exec(`
+      DROP TRIGGER product_batches_stock_insert_guard;
+      DROP TRIGGER product_batches_stock_update_guard;
+    `);
+
+    db.prepare(
+      "UPDATE product_batches SET quantity_on_hand = 37 WHERE id = ?"
+    ).run(batchId);
+
+    db.exec("DROP TRIGGER stock_movements_validate_safe_balance");
+
+    db.prepare(
+      "DELETE FROM schema_migrations WHERE version IN (5, 6)"
+    ).run();
+  } finally {
+    db.close();
+  }
+
+  db = openDatabase(path);
+
+  try {
+    const firstCount = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM stock_movements
+      WHERE batch_id = ? AND reference = 'migration-v5'
+    `).get(batchId).count;
+
+    assert.equal(firstCount, 1);
+
+    db.exec(`
+      DROP TRIGGER product_batches_stock_insert_guard;
+      DROP TRIGGER product_batches_stock_update_guard;
+      DROP TRIGGER stock_movements_validate_safe_balance;
+    `);
+
+    db.prepare(
+      "DELETE FROM schema_migrations WHERE version IN (5, 6)"
+    ).run();
+  } finally {
+    db.close();
+  }
+
+  db = openDatabase(path);
+
+  try {
+    const movements = db.prepare(`
+      SELECT movement_type, quantity, reference
+      FROM stock_movements
+      WHERE batch_id = ? AND reference = 'migration-v5'
+    `).all(batchId);
+
+    assert.deepEqual(movements.map((row) => ({ ...row })), [{
+      movement_type: "opening_stock",
+      quantity: 37,
+      reference: "migration-v5"
+    }]);
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      37
+    );
+
+    assert.deepEqual(
+      db.prepare(
+        "SELECT version FROM schema_migrations ORDER BY version"
+      ).all().map((row) => row.version),
+      [1, 2, 3, 4, 5, 6]
+    );
+  } finally {
+    db.close();
   }
 });
