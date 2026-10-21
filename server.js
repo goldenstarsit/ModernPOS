@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
 import { resolve, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api.js";
@@ -74,11 +75,22 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    const info = await stat(realFilePath);
+    const fileHandle = await open(
+      realFilePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW
+    );
 
-    if (!info.isFile()) throw new Error("Not a file");
+    let content;
 
-    const content = await readFile(realFilePath);
+    try {
+      const info = await fileHandle.stat();
+
+      if (!info.isFile()) throw new Error("Not a file");
+
+      content = await fileHandle.readFile();
+    } finally {
+      await fileHandle.close();
+    }
 
     res.writeHead(200, {
       "Content-Type":
