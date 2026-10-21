@@ -640,6 +640,30 @@ test("stock movement API validates query parameters and HTTP methods", async (t)
   );
 });
 
+test("products API enforces search query length boundaries", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const accepted = await fetch(
+    `${baseUrl}/api/products?q=${"x".repeat(200)}`
+  );
+  assert.equal(accepted.status, 200);
+  assert.equal((await accepted.json()).pagination.total, 0);
+
+  const rejected = await fetch(
+    `${baseUrl}/api/products?q=${"x".repeat(201)}`
+  );
+  assert.equal(rejected.status, 400);
+  assert.equal(
+    (await rejected.json()).error.code,
+    "INVALID_QUERY"
+  );
+
+  const list = await fetch(`${baseUrl}/api/products`);
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).pagination.total, 0);
+});
+
 test("products API treats percent signs in search queries literally", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
