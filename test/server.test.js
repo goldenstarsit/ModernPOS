@@ -217,6 +217,8 @@ test("API HEAD error responses return status and headers without a body", async 
 
   const cases = [
     { path: "/api/products?offset=-1", status: 400 },
+    { path: "/api/products/0", status: 400 },
+    { path: "/api/products/999999", status: 404 },
     { path: "/api/stock-movements?offset=-1", status: 400 },
     { path: "/api/not-a-real-route", status: 404 }
   ];
