@@ -255,6 +255,40 @@ test("product detail returns a safe database error when querying fails", async (
   );
 });
 
+test("product detail rejects invalid IDs before database access", async () => {
+  const req = {
+    method: "GET",
+    url: "/api/products/0",
+    headers: {}
+  };
+  const res = createResponseCapture();
+  let databaseAccessed = false;
+  const db = {
+    prepare() {
+      databaseAccessed = true;
+      throw new Error("Database must not be accessed for an invalid product ID.");
+    }
+  };
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/products/0",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 400);
+  assert.equal(res.headers["Content-Type"].split(";")[0], "application/json");
+  assert.deepEqual(JSON.parse(res.body), {
+    error: {
+      code: "INVALID_PRODUCT_ID",
+      message: "Product ID must be a positive integer."
+    }
+  });
+  assert.equal(databaseAccessed, false);
+});
+
 test("product detail returns 404 when the product does not exist", async (t) => {
   const db = createTestDatabase(t);
   const req = {
