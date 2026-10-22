@@ -220,6 +220,47 @@ test("paths outside the API are not handled by the API router", async () => {
   assert.equal(res.body, null);
 });
 
+test("product detail returns the requested product", async (t) => {
+  const db = createTestDatabase(t);
+  const result = insertProduct(db, "DETAIL-001", "Detail Test Product");
+  const id = Number(result.lastInsertRowid);
+  const pathname = `/api/products/${id}`;
+  const req = {
+    method: "GET",
+    url: pathname,
+    headers: {}
+  };
+  const res = createResponseCapture();
+
+  const handled = await handleApiRequest(req, res, pathname, db);
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 200);
+  assert.equal(
+    res.headers["Content-Type"].split(";")[0],
+    "application/json"
+  );
+
+  const body = JSON.parse(res.body);
+  assert.deepEqual(Object.keys(body), ["data"]);
+  assert.deepEqual(body.data, {
+    id,
+    sku: "DETAIL-001",
+    name: "Detail Test Product",
+    description: "",
+    unit: "piece",
+    cost_price_paisa: 12500,
+    sale_price_paisa: 18000,
+    is_active: 1,
+    created_at: body.data.created_at,
+    updated_at: body.data.updated_at
+  });
+  assert.equal(typeof body.data.created_at, "string");
+  assert.equal(typeof body.data.updated_at, "string");
+  assert.ok(Number.isFinite(Date.parse(body.data.created_at)));
+  assert.ok(Number.isFinite(Date.parse(body.data.updated_at)));
+});
+
 test("product detail returns a safe database error when querying fails", async () => {
   const req = {
     method: "GET",
