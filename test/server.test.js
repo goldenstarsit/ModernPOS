@@ -107,7 +107,16 @@ test("server exits unsuccessfully when its configured port is already in use", a
       PORT: String(port),
       DATABASE_PATH: databasePath
     },
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const stderrDone = new Promise((resolve) => {
+    child.stderr.once("end", resolve);
   });
 
   let timeout;
@@ -127,6 +136,10 @@ test("server exits unsuccessfully when its configured port is already in use", a
 
     assert.equal(result.code, 1);
     assert.equal(result.signal, null);
+
+    await stderrDone;
+    assert.match(stderr, /ModernPOS server error:/);
+    assert.match(stderr, /EADDRINUSE/);
   } finally {
     clearTimeout(timeout);
 
