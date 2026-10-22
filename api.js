@@ -144,8 +144,32 @@ async function readJsonBody(req) {
   }
 }
 
+function rejectRepeatedQueryParameter(req, res, url, names) {
+  const repeated = names.find(
+    (name) => url.searchParams.getAll(name).length > 1
+  );
+
+  if (repeated === undefined) {
+    return false;
+  }
+
+  sendError(
+    res,
+    400,
+    "DUPLICATE_QUERY_PARAMETER",
+    `Query parameter "${repeated}" must not be repeated.`,
+    req.method
+  );
+  return true;
+}
+
 function listProducts(req, res, db) {
   const url = new URL(req.url, "http://localhost");
+
+  if (rejectRepeatedQueryParameter(req, res, url, ["limit", "offset", "q"])) {
+    return;
+  }
+
   const rawLimit = url.searchParams.get("limit") ?? "50";
   const rawOffset = url.searchParams.get("offset") ?? "0";
   const limit = parsePositiveInteger(rawLimit);
@@ -336,6 +360,15 @@ async function createProduct(req, res, db) {
 
 function listStockMovementsApi(req, res, db) {
   const url = new URL(req.url, "http://localhost");
+
+  if (
+    rejectRepeatedQueryParameter(
+      req, res, url, ["limit", "offset", "batch_id"]
+    )
+  ) {
+    return;
+  }
+
   const rawLimit = url.searchParams.get("limit") ?? "50";
   const rawOffset = url.searchParams.get("offset") ?? "0";
   const rawBatchId = url.searchParams.get("batch_id");

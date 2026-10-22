@@ -1098,6 +1098,33 @@ test("product and stock movement APIs reject invalid pagination limits", async (
   }
 });
 
+test("product and stock movement APIs reject repeated query parameters", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const cases = [
+    ["/api/products?limit=1&limit=2", "limit"],
+    ["/api/products?offset=0&offset=1", "offset"],
+    ["/api/products?q=aspirin&q=ibuprofen", "q"],
+    ["/api/stock-movements?limit=1&limit=2", "limit"],
+    ["/api/stock-movements?offset=0&offset=1", "offset"],
+    ["/api/stock-movements?batch_id=1&batch_id=2", "batch_id"]
+  ];
+
+  for (const [path, parameter] of cases) {
+    const response = await fetch(`${baseUrl}${path}`);
+    const body = await response.json();
+
+    assert.equal(response.status, 400, path);
+    assert.equal(body.error.code, "DUPLICATE_QUERY_PARAMETER", path);
+    assert.equal(
+      body.error.message,
+      `Query parameter "${parameter}" must not be repeated.`,
+      path
+    );
+  }
+});
+
 test("stock movement API validates query parameters and HTTP methods", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
