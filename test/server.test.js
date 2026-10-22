@@ -117,11 +117,15 @@ test("static server supports HEAD without a response body", async (t) => {
   const { baseUrl } = await startServer(port, t);
 
   const getResponse = await fetch(baseUrl);
-  const getBody = await getResponse.text();
+  const getBody = await getResponse.arrayBuffer();
   const headResponse = await fetch(baseUrl, { method: "HEAD" });
 
   assert.equal(getResponse.status, 200);
   assert.equal(headResponse.status, 200);
+  assert.equal(
+    Number(getResponse.headers.get("content-length")),
+    getBody.byteLength
+  );
   assert.equal(
     headResponse.headers.get("content-type"),
     getResponse.headers.get("content-type")
@@ -134,7 +138,7 @@ test("static server supports HEAD without a response body", async (t) => {
     headResponse.headers.get("x-content-type-options"),
     "nosniff"
   );
-  assert.ok(getBody.length > 0);
+  assert.ok(getBody.byteLength > 0);
   assert.equal(await headResponse.text(), "");
 });
 
