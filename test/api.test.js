@@ -254,3 +254,30 @@ test("product detail returns a safe database error when querying fails", async (
     false
   );
 });
+
+test("product detail returns 404 when the product does not exist", async (t) => {
+  const db = createTestDatabase(t);
+  const req = {
+    method: "GET",
+    url: "/api/products/999999",
+    headers: {}
+  };
+  const res = createResponseCapture();
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/products/999999",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 404);
+  assert.match(res.headers["Content-Type"], /application\/json/);
+  assert.deepEqual(JSON.parse(res.body), {
+    error: {
+      code: "PRODUCT_NOT_FOUND",
+      message: "Product not found."
+    }
+  });
+});
