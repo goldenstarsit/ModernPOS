@@ -144,6 +144,50 @@ test("server exits unsuccessfully when its configured port is already in use", a
   }
 });
 
+test("server exits unsuccessfully when its configured database path is a directory", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "modernpos-database-startup-"));
+  const port = await getAvailablePort();
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      HOST,
+      PORT: String(port),
+      DATABASE_PATH: directory
+    },
+    stdio: "ignore"
+  });
+
+  let timeout;
+
+  try {
+    const result = await Promise.race([
+      new Promise((resolve) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Server did not exit after database startup failure")),
+          5000
+        );
+      })
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.equal(result.signal, null);
+  } finally {
+    clearTimeout(timeout);
+
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await exited;
+    }
+
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("server exits successfully after SIGTERM", async (t) => {
   const port = await getAvailablePort();
   const { child } = await startServer(port, t);
