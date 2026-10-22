@@ -746,9 +746,20 @@ test("products API rejects invalid input and pagination parameters", async (t) =
   assert.equal(invalidLimit.status, 400);
   assert.equal((await invalidLimit.json()).error.code, "INVALID_LIMIT");
 
-  const invalidId = await fetch(`${baseUrl}/api/products/0`);
-  assert.equal(invalidId.status, 400);
-  assert.equal((await invalidId.json()).error.code, "INVALID_PRODUCT_ID");
+  for (const productId of ["0", "-1", "abc", "1.5", "9007199254740992"]) {
+    const invalidId = await fetch(`${baseUrl}/api/products/${productId}`);
+
+    assert.equal(
+      invalidId.status,
+      400,
+      `product ID ${productId} should return HTTP 400`
+    );
+    assert.equal(
+      (await invalidId.json()).error.code,
+      "INVALID_PRODUCT_ID",
+      `product ID ${productId} should return INVALID_PRODUCT_ID`
+    );
+  }
 
   const list = await fetch(`${baseUrl}/api/products`);
   assert.equal((await list.json()).pagination.total, 0);
