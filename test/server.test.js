@@ -1112,16 +1112,38 @@ test("product and stock movement APIs reject repeated query parameters", async (
   ];
 
   for (const [path, parameter] of cases) {
-    const response = await fetch(`${baseUrl}${path}`);
-    const body = await response.json();
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${baseUrl}${path}`, { method });
 
-    assert.equal(response.status, 400, path);
-    assert.equal(body.error.code, "DUPLICATE_QUERY_PARAMETER", path);
-    assert.equal(
-      body.error.message,
-      `Query parameter "${parameter}" must not be repeated.`,
-      path
-    );
+      assert.equal(response.status, 400, `${method} ${path}`);
+      assert.equal(
+        response.headers.get("content-type")?.includes("application/json"),
+        true,
+        `${method} ${path}: JSON content type`
+      );
+      assert.equal(
+        response.headers.get("x-content-type-options"),
+        "nosniff",
+        `${method} ${path}: security header`
+      );
+
+      if (method === "HEAD") {
+        assert.equal(await response.text(), "", `${method} ${path}: empty body`);
+        continue;
+      }
+
+      const body = await response.json();
+      assert.equal(
+        body.error.code,
+        "DUPLICATE_QUERY_PARAMETER",
+        `${method} ${path}`
+      );
+      assert.equal(
+        body.error.message,
+        `Query parameter "${parameter}" must not be repeated.`,
+        `${method} ${path}`
+      );
+    }
   }
 });
 
