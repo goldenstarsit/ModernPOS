@@ -112,6 +112,32 @@ test("static server preserves basic HTTP behavior", async (t) => {
   assert.equal(await unsupported.text(), "Method Not Allowed");
 });
 
+test("static server supports HEAD without a response body", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const getResponse = await fetch(baseUrl);
+  const getBody = await getResponse.text();
+  const headResponse = await fetch(baseUrl, { method: "HEAD" });
+
+  assert.equal(getResponse.status, 200);
+  assert.equal(headResponse.status, 200);
+  assert.equal(
+    headResponse.headers.get("content-type"),
+    getResponse.headers.get("content-type")
+  );
+  assert.equal(
+    headResponse.headers.get("content-length"),
+    getResponse.headers.get("content-length")
+  );
+  assert.equal(
+    headResponse.headers.get("x-content-type-options"),
+    "nosniff"
+  );
+  assert.ok(getBody.length > 0);
+  assert.equal(await headResponse.text(), "");
+});
+
 test("health endpoint returns JSON success", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
