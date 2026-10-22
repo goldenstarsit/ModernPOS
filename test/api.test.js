@@ -256,37 +256,52 @@ test("product detail returns a safe database error when querying fails", async (
 });
 
 test("product detail rejects invalid IDs before database access", async () => {
-  const req = {
-    method: "GET",
-    url: "/api/products/0",
-    headers: {}
-  };
-  const res = createResponseCapture();
-  let databaseAccessed = false;
-  const db = {
-    prepare() {
-      databaseAccessed = true;
-      throw new Error("Database must not be accessed for an invalid product ID.");
-    }
-  };
+  const invalidIds = [
+    "0",
+    "-1",
+    "abc",
+    "1.5",
+    "9007199254740992",
+    "01"
+  ];
 
-  const handled = await handleApiRequest(
-    req,
-    res,
-    "/api/products/0",
-    db
-  );
+  for (const id of invalidIds) {
+    const pathname = `/api/products/${id}`;
+    const req = {
+      method: "GET",
+      url: pathname,
+      headers: {}
+    };
+    const res = createResponseCapture();
+    let databaseAccessed = false;
+    const db = {
+      prepare() {
+        databaseAccessed = true;
+        throw new Error("Database must not be accessed for an invalid product ID.");
+      }
+    };
 
-  assert.equal(handled, true);
-  assert.equal(res.status, 400);
-  assert.equal(res.headers["Content-Type"].split(";")[0], "application/json");
-  assert.deepEqual(JSON.parse(res.body), {
-    error: {
-      code: "INVALID_PRODUCT_ID",
-      message: "Product ID must be a positive integer."
-    }
-  });
-  assert.equal(databaseAccessed, false);
+    const handled = await handleApiRequest(req, res, pathname, db);
+
+    assert.equal(handled, true, `ID ${id}: API route should be handled`);
+    assert.equal(res.status, 400, `ID ${id}: should return HTTP 400`);
+    assert.equal(
+      res.headers["Content-Type"].split(";")[0],
+      "application/json",
+      `ID ${id}: should return JSON`
+    );
+    assert.deepEqual(JSON.parse(res.body), {
+      error: {
+        code: "INVALID_PRODUCT_ID",
+        message: "Product ID must be a positive integer."
+      }
+    }, `ID ${id}: should return the standard validation error`);
+    assert.equal(
+      databaseAccessed,
+      false,
+      `ID ${id}: database must not be accessed`
+    );
+  }
 });
 
 test("product detail returns 404 when the product does not exist", async (t) => {
