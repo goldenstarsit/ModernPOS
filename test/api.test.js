@@ -219,3 +219,38 @@ test("paths outside the API are not handled by the API router", async () => {
   assert.equal(res.status, null);
   assert.equal(res.body, null);
 });
+
+test("product detail returns a safe database error when querying fails", async () => {
+  const req = {
+    method: "GET",
+    url: "/api/products/1",
+    headers: {}
+  };
+  const res = createResponseCapture();
+  const db = {
+    prepare() {
+      throw new Error("Internal product database details");
+    }
+  };
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/products/1",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 500);
+  assert.match(res.headers["Content-Type"], /application\/json/);
+  assert.deepEqual(JSON.parse(res.body), {
+    error: {
+      code: "DATABASE_ERROR",
+      message: "Unable to retrieve the product."
+    }
+  });
+  assert.equal(
+    res.body.includes("Internal product database details"),
+    false
+  );
+});
