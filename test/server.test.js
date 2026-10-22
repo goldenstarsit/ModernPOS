@@ -438,7 +438,8 @@ test("API routes return exact Allow headers for unsupported methods", async (t) 
     { path: "/api/products", allow: "GET, HEAD, POST" },
     { path: "/api/stock-movements", allow: "GET, HEAD, POST" },
     { path: "/api/products/1", allow: "GET, HEAD" },
-    { path: "/api/health", allow: "GET, HEAD" }
+    { path: "/api/health", allow: "GET, HEAD" },
+    { path: "/api/health/database", allow: "GET, HEAD" }
   ];
 
   for (const item of cases) {
