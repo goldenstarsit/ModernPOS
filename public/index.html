@@ -7,7 +7,7 @@
   <meta name="description" content="ModernPOS business management dashboard">
   <title>ModernPOS — Dashboard</title>
   <link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=lesson37-refresh1" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -72,6 +72,7 @@
       </header>
 
       <div class="page-content">
+        <div id="dashboardView" data-page-view="Dashboard">
         <section class="welcome-row">
           <div>
             <p class="eyebrow">OVERVIEW</p>
@@ -213,6 +214,49 @@
             <span id="salesCount">Showing 4 sample transactions</span>
             <span class="demo-notice">Illustrative data · Not connected to a database</span>
           </footer>
+        </section>
+
+        </div>
+
+        <section id="productsView" data-page-view="Products" hidden>
+          <section class="section-heading products-heading">
+            <div>
+              <p class="eyebrow">CATALOG</p>
+              <h1>Products</h1>
+              <p class="section-description">Products loaded from your local database</p>
+            </div>
+            <label class="search-box products-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="productSearch" type="search"
+                placeholder="Search name or SKU..."
+                aria-label="Search products" maxlength="200">
+            </label>
+          </section>
+
+          <section class="table-card" aria-label="Product catalog">
+            <div id="productsState" class="products-state" role="status" aria-live="polite">
+              Loading products...
+            </div>
+            <div id="productsTableScroll" class="table-scroll" hidden>
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>PRODUCT</th>
+                    <th>UNIT</th>
+                    <th>COST PRICE</th>
+                    <th>SALE PRICE</th>
+                    <th>STATUS</th>
+                  </tr>
+                </thead>
+                <tbody id="productsTableBody"></tbody>
+              </table>
+            </div>
+            <footer class="table-footer">
+              <span id="productsCount">Products have not loaded yet.</span>
+              <span>Live database data</span>
+            </footer>
+          </section>
         </section>
 
         <div id="appMessage" class="app-message" role="status" aria-live="polite" hidden></div>
