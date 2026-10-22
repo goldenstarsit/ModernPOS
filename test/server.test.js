@@ -550,6 +550,49 @@ test("API HEAD error responses return status and headers without a body", async 
   }
 });
 
+test("products API supports HEAD for existing and missing product details", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const created = await fetch(`${baseUrl}/api/products`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "HEAD Detail Product" })
+  });
+
+  assert.equal(created.status, 201);
+  const product = (await created.json()).data;
+
+  for (const path of [
+    `/api/products/${product.id}`,
+    "/api/products/999999"
+  ]) {
+    const getResponse = await fetch(`${baseUrl}${path}`);
+    const getBody = await getResponse.arrayBuffer();
+    const headResponse = await fetch(`${baseUrl}${path}`, {
+      method: "HEAD"
+    });
+
+    assert.equal(headResponse.status, getResponse.status, path);
+    assert.match(
+      headResponse.headers.get("content-type") || "",
+      /application\/json/,
+      path
+    );
+    assert.equal(
+      headResponse.headers.get("content-length"),
+      String(getBody.byteLength),
+      `HEAD Content-Length should match GET body length: ${path}`
+    );
+    assert.equal(
+      headResponse.headers.get("x-content-type-options"),
+      "nosniff",
+      path
+    );
+    assert.equal(await headResponse.text(), "", path);
+  }
+});
+
 test("products API creates, lists, retrieves, and rejects duplicate SKUs", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
