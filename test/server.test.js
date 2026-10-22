@@ -517,22 +517,35 @@ test("API HEAD error responses return status and headers without a body", async 
   ];
 
   for (const { path, status } of cases) {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const getResponse = await fetch(`${baseUrl}${path}`);
+    const getBody = await getResponse.arrayBuffer();
+    const headResponse = await fetch(`${baseUrl}${path}`, {
       method: "HEAD"
     });
 
-    assert.equal(response.status, status, path);
+    assert.equal(getResponse.status, status, `GET ${path}`);
+    assert.equal(headResponse.status, status, `HEAD ${path}`);
+    assert.equal(
+      Number(getResponse.headers.get("content-length")),
+      getBody.byteLength,
+      `GET Content-Length ${path}`
+    );
+    assert.equal(
+      headResponse.headers.get("content-length"),
+      getResponse.headers.get("content-length"),
+      `HEAD Content-Length should match GET ${path}`
+    );
     assert.match(
-      response.headers.get("content-type") || "",
+      headResponse.headers.get("content-type") || "",
       /application\/json/,
       path
     );
     assert.equal(
-      response.headers.get("x-content-type-options"),
+      headResponse.headers.get("x-content-type-options"),
       "nosniff",
       path
     );
-    assert.equal(await response.text(), "", path);
+    assert.equal(await headResponse.text(), "", path);
   }
 });
 
