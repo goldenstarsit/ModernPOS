@@ -704,6 +704,36 @@ test("product and stock movement APIs reject invalid pagination offsets", async 
   }
 });
 
+test("products API rejects an empty JSON body and remains healthy", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const empty = await fetch(`${baseUrl}/api/products`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: ""
+  });
+
+  assert.equal(empty.status, 400);
+  assert.equal(
+    (await empty.json()).error.code,
+    "INVALID_REQUEST_BODY"
+  );
+
+  const list = await fetch(`${baseUrl}/api/products`);
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).pagination.total, 0);
+
+  const valid = await fetch(`${baseUrl}/api/products`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "After Empty Request" })
+  });
+
+  assert.equal(valid.status, 201);
+  assert.equal((await valid.json()).data.name, "After Empty Request");
+});
+
 test("products API rejects invalid input and pagination parameters", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
