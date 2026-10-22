@@ -117,6 +117,41 @@ test("product list returns a safe database error when querying fails", async () 
   assert.equal(res.body.includes("Internal database details"), false);
 });
 
+test("stock movement list returns a safe database error when querying fails", async () => {
+  const req = {
+    method: "GET",
+    url: "/api/stock-movements",
+    headers: {}
+  };
+  const res = createResponseCapture();
+  const db = {
+    prepare() {
+      throw new Error("Internal stock movement database details");
+    }
+  };
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/stock-movements",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 500);
+  assert.match(res.headers["Content-Type"], /application\/json/);
+  assert.deepEqual(JSON.parse(res.body), {
+    error: {
+      code: "DATABASE_ERROR",
+      message: "Unable to retrieve stock movements."
+    }
+  });
+  assert.equal(
+    res.body.includes("Internal stock movement database details"),
+    false
+  );
+});
+
 test("product list returns products in descending ID order with pagination metadata", async (t) => {
   const db = createTestDatabase(t);
   insertProduct(db, "PAGE-001", "First Product");
