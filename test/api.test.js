@@ -117,6 +117,78 @@ test("product list returns a safe database error when querying fails", async () 
   assert.equal(res.body.includes("Internal database details"), false);
 });
 
+test("stock movement list returns movement details and default pagination", async (t) => {
+  const db = createTestDatabase(t);
+  const productResult = insertProduct(
+    db,
+    "STOCK-LIST-54",
+    "Stock List Regression Product"
+  );
+  const productId = Number(productResult.lastInsertRowid);
+
+  const batchResult = db.prepare(`
+    INSERT INTO product_batches (
+      product_id, batch_number, expiry_date, quantity_on_hand,
+      cost_price_paisa
+    ) VALUES (?, ?, ?, 0, ?)
+  `).run(productId, "BATCH-54", "2030-12-31", 12500);
+  const batchId = Number(batchResult.lastInsertRowid);
+
+  const movementResult = db.prepare(`
+    INSERT INTO stock_movements (
+      batch_id, movement_type, quantity, reference, notes
+    ) VALUES (?, 'opening_stock', 12, ?, ?)
+  `).run(batchId, "OPEN-54", "API list success regression");
+  const movementId = Number(movementResult.lastInsertRowid);
+
+  const req = {
+    method: "GET",
+    url: "/api/stock-movements",
+    headers: {}
+  };
+  const res = createResponseCapture();
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/stock-movements",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 200);
+  assert.equal(
+    res.headers["Content-Type"].split(";")[0],
+    "application/json"
+  );
+
+  const body = JSON.parse(res.body);
+  assert.deepEqual(Object.keys(body), ["data", "pagination"]);
+  assert.deepEqual(body.pagination, {
+    limit: 50,
+    offset: 0,
+    total: 1
+  });
+  assert.equal(body.data.length, 1);
+  assert.deepEqual(body.data[0], {
+    id: movementId,
+    batch_id: batchId,
+    movement_type: "opening_stock",
+    quantity: 12,
+    reference: "OPEN-54",
+    notes: "API list success regression",
+    created_at: body.data[0].created_at,
+    product_id: productId,
+    batch_number: "BATCH-54",
+    expiry_date: "2030-12-31",
+    current_quantity_on_hand: 12,
+    product_name: "Stock List Regression Product",
+    product_sku: "STOCK-LIST-54"
+  });
+  assert.equal(typeof body.data[0].created_at, "string");
+  assert.ok(Number.isFinite(Date.parse(body.data[0].created_at)));
+});
+
 test("stock movement list returns a safe database error when querying fails", async () => {
   const req = {
     method: "GET",
