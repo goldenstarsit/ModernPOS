@@ -88,6 +88,62 @@ async function startServer(port, t, setupDatabase) {
   }
 }
 
+test("server exits unsuccessfully when its configured port is already in use", async (t) => {
+  const occupiedServer = createServer();
+
+  await new Promise((resolve, reject) => {
+    occupiedServer.once("error", reject);
+    occupiedServer.listen(0, HOST, resolve);
+  });
+
+  const port = occupiedServer.address().port;
+  const directory = mkdtempSync(join(tmpdir(), "modernpos-startup-"));
+  const databasePath = join(directory, "test.sqlite");
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      HOST,
+      PORT: String(port),
+      DATABASE_PATH: databasePath
+    },
+    stdio: "ignore"
+  });
+
+  let timeout;
+
+  try {
+    const result = await Promise.race([
+      new Promise((resolve) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Server did not exit after port conflict")),
+          5000
+        );
+      })
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.equal(result.signal, null);
+  } finally {
+    clearTimeout(timeout);
+
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await exited;
+    }
+
+    await new Promise((resolve, reject) => {
+      occupiedServer.close((error) => error ? reject(error) : resolve());
+    });
+
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("static server preserves basic HTTP behavior", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
