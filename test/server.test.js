@@ -168,7 +168,16 @@ test("server exits unsuccessfully when its configured database path is a directo
       PORT: String(port),
       DATABASE_PATH: directory
     },
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const stderrDone = new Promise((resolve) => {
+    child.stderr.once("end", resolve);
   });
 
   let timeout;
@@ -188,6 +197,9 @@ test("server exits unsuccessfully when its configured database path is a directo
 
     assert.equal(result.code, 1);
     assert.equal(result.signal, null);
+    await stderrDone;
+    assert.match(stderr, /unable to open database file/i);
+    assert.match(stderr, /ERR_SQLITE_ERROR/);
   } finally {
     clearTimeout(timeout);
 
