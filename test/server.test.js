@@ -144,6 +144,42 @@ test("server exits unsuccessfully when its configured port is already in use", a
   }
 });
 
+test("server exits successfully after SIGTERM", async (t) => {
+  const port = await getAvailablePort();
+  const { child } = await startServer(port, t);
+
+  const exitPromise = new Promise((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+
+  let timeout;
+
+  try {
+    child.kill("SIGTERM");
+
+    const result = await Promise.race([
+      exitPromise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Server did not shut down after SIGTERM")),
+          5000
+        );
+      })
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.signal, null);
+  } finally {
+    clearTimeout(timeout);
+
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await exited;
+    }
+  }
+});
+
 test("static server preserves basic HTTP behavior", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
