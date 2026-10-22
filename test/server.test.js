@@ -1230,7 +1230,8 @@ test("OPTIONS requests return exact allowed methods for API routes", async (t) =
     ["/api/products", "GET, HEAD, POST"],
     ["/api/products/1", "GET, HEAD"],
     ["/api/stock-movements", "GET, HEAD, POST"],
-    ["/api/health", "GET, HEAD"]
+    ["/api/health", "GET, HEAD"],
+    ["/api/health/database", "GET, HEAD"]
   ];
 
   for (const [path, expectedAllow] of cases) {
