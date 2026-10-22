@@ -1167,7 +1167,11 @@ test("stock movement API validates query parameters and HTTP methods", async (t)
   const invalidCases = [
     ["limit=0", "INVALID_LIMIT"],
     ["offset=-1", "INVALID_OFFSET"],
-    ["batch_id=abc", "INVALID_BATCH_ID"]
+    ["batch_id=abc", "INVALID_BATCH_ID"],
+    ["batch_id=0", "INVALID_BATCH_ID"],
+    ["batch_id=-1", "INVALID_BATCH_ID"],
+    ["batch_id=1.5", "INVALID_BATCH_ID"],
+    ["batch_id=9007199254740992", "INVALID_BATCH_ID"]
   ];
 
   for (const [query, expectedCode] of invalidCases) {
