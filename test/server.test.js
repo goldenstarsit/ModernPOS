@@ -777,6 +777,30 @@ test("products API rejects an empty JSON body and remains healthy", async (t) =>
   assert.equal((await valid.json()).data.name, "After Empty Request");
 });
 
+test("products API rejects valid JSON values that are not objects", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  for (const body of ["null", "[]", '"text"', "42", "true"]) {
+    const response = await fetch(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    });
+
+    assert.equal(response.status, 400, `Expected rejection for JSON: ${body}`);
+    assert.equal(
+      (await response.json()).error.code,
+      "VALIDATION_ERROR",
+      `Expected VALIDATION_ERROR for JSON: ${body}`
+    );
+  }
+
+  const list = await fetch(`${baseUrl}/api/products?limit=10&offset=0`);
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).pagination.total, 0);
+});
+
 test("products API rejects invalid input and pagination parameters", async (t) => {
   const port = await getAvailablePort();
   const { baseUrl } = await startServer(port, t);
