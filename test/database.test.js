@@ -399,6 +399,58 @@ test("products enforce required fields, valid prices, and unique SKUs", (t) => {
 });
 
 
+test("products with batch records cannot be deleted", (t) => {
+  const db = openDatabase(createTestDatabase(t));
+
+  try {
+    const product = db.prepare(`
+      INSERT INTO products (sku, name)
+      VALUES (?, ?)
+    `).run("PRODUCT-DELETE-001", "Product Delete Restriction Test");
+
+    const productId = Number(product.lastInsertRowid);
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, ?)
+    `).run(productId, "PRODUCT-DELETE-BATCH-001", "2028-12-31", 0);
+
+    const batchId = Number(batch.lastInsertRowid);
+
+    assert.throws(
+      () => db.prepare("DELETE FROM products WHERE id = ?").run(productId),
+      /FOREIGN KEY constraint failed/
+    );
+
+    const remainingProduct = db.prepare(
+      "SELECT id, sku, name FROM products WHERE id = ?"
+    ).get(productId);
+
+    assert.deepEqual({ ...remainingProduct }, {
+      id: productId,
+      sku: "PRODUCT-DELETE-001",
+      name: "Product Delete Restriction Test"
+    });
+
+    const remainingBatch = db.prepare(`
+      SELECT id, product_id, batch_number, quantity_on_hand
+      FROM product_batches
+      WHERE id = ?
+    `).get(batchId);
+
+    assert.deepEqual({ ...remainingBatch }, {
+      id: batchId,
+      product_id: productId,
+      batch_number: "PRODUCT-DELETE-BATCH-001",
+      quantity_on_hand: 0
+    });
+  } finally {
+    db.close();
+  }
+});
+
+
 test("product batches enforce product links, valid quantities, and unique batch numbers", (t) => {
   const db = openDatabase(createTestDatabase(t));
 
