@@ -269,6 +269,37 @@ test("stock movement list filters results by batch ID", async (t) => {
   );
 });
 
+test("stock movement list returns an empty result for an unknown batch ID", async (t) => {
+  const db = createTestDatabase(t);
+  const unknownBatchId = 999999999;
+
+  const req = {
+    method: "GET",
+    url: `/api/stock-movements?batch_id=${unknownBatchId}&limit=10&offset=0`,
+    headers: {}
+  };
+  const res = createResponseCapture();
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/stock-movements",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 200);
+  assert.match(res.headers["Content-Type"], /application\/json/);
+
+  const body = JSON.parse(res.body);
+  assert.deepEqual(body.pagination, {
+    limit: 10,
+    offset: 0,
+    total: 0
+  });
+  assert.deepEqual(body.data, []);
+});
+
 test("stock movement list returns a safe database error when querying fails", async () => {
   const req = {
     method: "GET",
