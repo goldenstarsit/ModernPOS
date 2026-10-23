@@ -471,6 +471,72 @@ test("product batches enforce product links, valid quantities, and unique batch 
 });
 
 
+test("stock movements reject invalid types and non-positive quantities without changing stock", (t) => {
+  const db = openDatabase(createTestDatabase(t));
+
+  try {
+    const product = db.prepare(`
+      INSERT INTO products (sku, name)
+      VALUES (?, ?)
+    `).run("STOCK-INVALID-001", "Invalid Movement Test");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, ?)
+    `).run(
+      Number(product.lastInsertRowid),
+      "STOCK-INVALID-BATCH-001",
+      "2028-12-31",
+      0
+    );
+
+    const batchId = Number(batch.lastInsertRowid);
+    const addMovement = db.prepare(`
+      INSERT INTO stock_movements (batch_id, movement_type, quantity)
+      VALUES (?, ?, ?)
+    `);
+
+    addMovement.run(batchId, "purchase", 20);
+
+    assert.throws(
+      () => addMovement.run(batchId, "unknown_type", 1),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
+      () => addMovement.run(batchId, "purchase", 0),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
+      () => addMovement.run(batchId, "purchase", -1),
+      /CHECK constraint failed/
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      20
+    );
+
+    const movements = db.prepare(`
+      SELECT movement_type, quantity
+      FROM stock_movements
+      WHERE batch_id = ?
+      ORDER BY id
+    `).all(batchId);
+
+    assert.deepEqual(
+      movements.map((row) => ({ ...row })),
+      [{ movement_type: "purchase", quantity: 20 }]
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("stock movements update batch quantities and preserve immutable history", (t) => {
   const db = openDatabase(createTestDatabase(t));
 
