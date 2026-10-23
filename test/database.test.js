@@ -677,6 +677,15 @@ test("stock movements update batch quantities and preserve immutable history", (
       /Insufficient stock/
     );
 
+    // A rejected sale must not prevent a later valid movement.
+    addMovement.run(batchId, "sale", 10, "Recovery sale");
+
+    assert.equal(
+      db.prepare("SELECT quantity_on_hand FROM product_batches WHERE id = ?")
+        .get(batchId).quantity_on_hand,
+      60
+    );
+
     const movement = db.prepare(`
       SELECT movement_type, quantity, notes
       FROM stock_movements
@@ -686,7 +695,8 @@ test("stock movements update batch quantities and preserve immutable history", (
 
     assert.deepEqual(movement.map((row) => ({ ...row })), [
       { movement_type: "purchase", quantity: 100, notes: "Initial delivery" },
-      { movement_type: "sale", quantity: 30, notes: "Customer sale" }
+      { movement_type: "sale", quantity: 30, notes: "Customer sale" },
+      { movement_type: "sale", quantity: 10, notes: "Recovery sale" }
     ]);
 
     assert.throws(
@@ -706,7 +716,7 @@ test("stock movements update batch quantities and preserve immutable history", (
     assert.equal(
       db.prepare("SELECT quantity_on_hand FROM product_batches WHERE id = ?")
         .get(batchId).quantity_on_hand,
-      70
+      60
     );
 
     const movementAfterRejectedMutations = db.prepare(`
@@ -720,7 +730,8 @@ test("stock movements update batch quantities and preserve immutable history", (
       movementAfterRejectedMutations.map((row) => ({ ...row })),
       [
         { movement_type: "purchase", quantity: 100, notes: "Initial delivery" },
-        { movement_type: "sale", quantity: 30, notes: "Customer sale" }
+        { movement_type: "sale", quantity: 30, notes: "Customer sale" },
+        { movement_type: "sale", quantity: 10, notes: "Recovery sale" }
       ]
     );
   } finally {
