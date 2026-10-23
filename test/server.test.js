@@ -978,6 +978,42 @@ test("stock movement API rejects invalid request bodies and remains healthy", as
   });
 });
 
+test("stock movement API rejects empty and oversized JSON bodies", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const empty = await fetch(`${baseUrl}/api/stock-movements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: ""
+  });
+
+  assert.equal(empty.status, 400);
+  assert.equal(
+    (await empty.json()).error.code,
+    "INVALID_REQUEST_BODY"
+  );
+
+  const oversized = await fetch(`${baseUrl}/api/stock-movements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reference: "x".repeat(17 * 1024) })
+  });
+
+  assert.equal(oversized.status, 413);
+  assert.equal(
+    (await oversized.json()).error.code,
+    "INVALID_REQUEST_BODY"
+  );
+
+  const health = await fetch(`${baseUrl}/api/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), {
+    status: "ok",
+    service: "ModernPOS"
+  });
+});
+
 test("stock movement API records and protects stock", async (t) => {
   const port = await getAvailablePort();
   let batchId;
