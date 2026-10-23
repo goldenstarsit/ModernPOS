@@ -762,6 +762,18 @@ test("stock batches with movement history cannot be deleted", (t) => {
       20
     );
 
+    db.prepare(`
+      INSERT INTO stock_movements (batch_id, movement_type, quantity, notes)
+      VALUES (?, 'sale', ?, ?)
+    `).run(batchId, 20, "Recorded sale");
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      0
+    );
+
     assert.throws(
       () => db.prepare(
         "DELETE FROM product_batches WHERE id = ?"
@@ -777,7 +789,7 @@ test("stock batches with movement history cannot be deleted", (t) => {
 
     assert.deepEqual({ ...remainingBatch }, {
       id: batchId,
-      quantity_on_hand: 20
+      quantity_on_hand: 0
     });
 
     const movements = db.prepare(`
@@ -792,6 +804,11 @@ test("stock batches with movement history cannot be deleted", (t) => {
         movement_type: "purchase",
         quantity: 20,
         notes: "Recorded purchase"
+      },
+      {
+        movement_type: "sale",
+        quantity: 20,
+        notes: "Recorded sale"
       }
     ]);
   } finally {
