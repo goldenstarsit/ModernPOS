@@ -346,9 +346,38 @@ test("products enforce required fields, valid prices, and unique SKUs", (t) => {
     );
 
     assert.throws(
+      () => insert.run("MED-002", "Negative sale price", "piece", 0, -1),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
+      () => insert.run("MED-002", "Fractional cost", "piece", 1.5, 100),
+      /cannot store REAL value in INTEGER column products\.cost_price_paisa/
+    );
+
+    assert.throws(
+      () => insert.run("MED-002", "Text sale price", "piece", 0, "not-a-number"),
+      /cannot store TEXT value in INTEGER column products\.sale_price_paisa/
+    );
+
+    const insertActive = db.prepare(
+      "INSERT INTO products (sku, name, is_active) VALUES (?, ?, ?)"
+    );
+
+    assert.throws(
+      () => insertActive.run("MED-002", "Invalid active flag", 2),
+      /CHECK constraint failed/
+    );
+
+    assert.throws(
       () => insert.run("med-001", "Duplicate SKU", "box", 100, 200),
       /UNIQUE constraint failed/
     );
+
+    const productCount = db.prepare(
+      "SELECT COUNT(*) AS count FROM products"
+    ).get();
+    assert.equal(productCount.count, 1);
 
     const product = db.prepare(`
       SELECT sku, name, unit, cost_price_paisa, sale_price_paisa, is_active
