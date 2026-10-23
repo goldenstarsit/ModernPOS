@@ -189,6 +189,86 @@ test("stock movement list returns movement details and default pagination", asyn
   assert.ok(Number.isFinite(Date.parse(body.data[0].created_at)));
 });
 
+test("stock movement list filters results by batch ID", async (t) => {
+  const db = createTestDatabase(t);
+
+  const targetProduct = insertProduct(
+    db,
+    "STOCK-FILTER-TARGET",
+    "Target Batch Filter Product"
+  );
+  const otherProduct = insertProduct(
+    db,
+    "STOCK-FILTER-OTHER",
+    "Other Batch Filter Product"
+  );
+
+  const insertBatch = db.prepare(`
+    INSERT INTO product_batches (
+      product_id, batch_number, expiry_date, quantity_on_hand,
+      cost_price_paisa
+    ) VALUES (?, ?, ?, 0, ?)
+  `);
+
+  const targetBatchId = Number(
+    insertBatch.run(
+      Number(targetProduct.lastInsertRowid),
+      "FILTER-TARGET",
+      "2030-12-31",
+      12500
+    ).lastInsertRowid
+  );
+
+  const otherBatchId = Number(
+    insertBatch.run(
+      Number(otherProduct.lastInsertRowid),
+      "FILTER-OTHER",
+      "2030-12-31",
+      12500
+    ).lastInsertRowid
+  );
+
+  const insertMovement = db.prepare(`
+    INSERT INTO stock_movements (
+      batch_id, movement_type, quantity, reference, notes
+    ) VALUES (?, 'opening_stock', 5, ?, ?)
+  `);
+
+  insertMovement.run(targetBatchId, "FILTER-TARGET-REF", "Target movement");
+  insertMovement.run(otherBatchId, "FILTER-OTHER-REF", "Other movement");
+
+  const req = {
+    method: "GET",
+    url: `/api/stock-movements?batch_id=${targetBatchId}&limit=10&offset=0`,
+    headers: {}
+  };
+  const res = createResponseCapture();
+
+  const handled = await handleApiRequest(
+    req,
+    res,
+    "/api/stock-movements",
+    db
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.status, 200);
+
+  const body = JSON.parse(res.body);
+  assert.deepEqual(body.pagination, {
+    limit: 10,
+    offset: 0,
+    total: 1
+  });
+  assert.equal(body.data.length, 1);
+  assert.equal(body.data[0].batch_id, targetBatchId);
+  assert.equal(body.data[0].reference, "FILTER-TARGET-REF");
+  assert.equal(
+    body.data.some((movement) => movement.batch_id === otherBatchId),
+    false
+  );
+});
+
 test("stock movement list returns a safe database error when querying fails", async () => {
   const req = {
     method: "GET",
