@@ -942,6 +942,42 @@ test("products API rejects oversized chunked request bodies", async (t) => {
 });
 
 
+test("stock movement API rejects invalid request bodies and remains healthy", async (t) => {
+  const port = await getAvailablePort();
+  const { baseUrl } = await startServer(port, t);
+
+  const invalidJson = await fetch(`${baseUrl}/api/stock-movements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{invalid json"
+  });
+
+  assert.equal(invalidJson.status, 400);
+  assert.equal(
+    (await invalidJson.json()).error.code,
+    "INVALID_REQUEST_BODY"
+  );
+
+  const wrongContentType = await fetch(`${baseUrl}/api/stock-movements`, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "not JSON"
+  });
+
+  assert.equal(wrongContentType.status, 415);
+  assert.equal(
+    (await wrongContentType.json()).error.code,
+    "INVALID_REQUEST_BODY"
+  );
+
+  const health = await fetch(`${baseUrl}/api/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), {
+    status: "ok",
+    service: "ModernPOS"
+  });
+});
+
 test("stock movement API records and protects stock", async (t) => {
   const port = await getAvailablePort();
   let batchId;
