@@ -873,7 +873,11 @@ test("products API rejects invalid product field boundaries without inserting re
     { name: "Invalid SKU", sku: "S".repeat(101) },
     { name: "Invalid description", description: "x".repeat(2001) },
     { name: "Invalid unit", unit: "   " },
+    { name: "Negative cost", cost_price_paisa: -1 },
+    { name: "Negative sale price", sale_price_paisa: -1 },
     { name: "Unsafe cost", cost_price_paisa: Number.MAX_SAFE_INTEGER + 1 },
+    { name: "Unsafe sale price", sale_price_paisa: Number.MAX_SAFE_INTEGER + 1 },
+    { name: "Fractional cost price", cost_price_paisa: 1.5 },
     { name: "Fractional sale price", sale_price_paisa: 1.5 },
     { name: "Invalid active flag", is_active: "false" }
   ];
