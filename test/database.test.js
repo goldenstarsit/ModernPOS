@@ -471,6 +471,59 @@ test("product batches enforce product links, valid quantities, and unique batch 
 });
 
 
+test("stock movements reject missing batches without changing existing stock or ledger", (t) => {
+  const db = openDatabase(createTestDatabase(t));
+
+  try {
+    const product = db.prepare(
+      "INSERT INTO products (sku, name) VALUES (?, ?)"
+    ).run("STOCK-FK-001", "Foreign Key Test Product");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, 0)
+    `).run(
+      Number(product.lastInsertRowid),
+      "STOCK-FK-BATCH-001",
+      "2028-12-31"
+    );
+
+    const batchId = Number(batch.lastInsertRowid);
+    const addMovement = db.prepare(`
+      INSERT INTO stock_movements (batch_id, movement_type, quantity)
+      VALUES (?, ?, ?)
+    `);
+
+    addMovement.run(batchId, "purchase", 20);
+
+    assert.throws(
+      () => addMovement.run(999999, "purchase", 5),
+      /FOREIGN KEY constraint failed/
+    );
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      20
+    );
+
+    const movements = db.prepare(`
+      SELECT batch_id, movement_type, quantity
+      FROM stock_movements
+      ORDER BY id
+    `).all();
+
+    assert.deepEqual(
+      movements.map((row) => ({ ...row })),
+      [{ batch_id: batchId, movement_type: "purchase", quantity: 20 }]
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("stock movements reject invalid types and non-positive quantities without changing stock", (t) => {
   const db = openDatabase(createTestDatabase(t));
 
