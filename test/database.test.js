@@ -676,6 +676,78 @@ test("stock movements update batch quantities and preserve immutable history", (
   }
 });
 
+test("stock batches with movement history cannot be deleted", (t) => {
+  const db = openDatabase(createTestDatabase(t));
+
+  try {
+    const product = db.prepare(`
+      INSERT INTO products (sku, name)
+      VALUES (?, ?)
+    `).run("STOCK-DELETE-001", "Batch Delete Test Product");
+
+    const batch = db.prepare(`
+      INSERT INTO product_batches (
+        product_id, batch_number, expiry_date, quantity_on_hand
+      ) VALUES (?, ?, ?, ?)
+    `).run(
+      Number(product.lastInsertRowid),
+      "DELETE-BATCH-001",
+      "2028-12-31",
+      0
+    );
+
+    const batchId = Number(batch.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO stock_movements (batch_id, movement_type, quantity, notes)
+      VALUES (?, 'purchase', ?, ?)
+    `).run(batchId, 20, "Recorded purchase");
+
+    assert.equal(
+      db.prepare(
+        "SELECT quantity_on_hand FROM product_batches WHERE id = ?"
+      ).get(batchId).quantity_on_hand,
+      20
+    );
+
+    assert.throws(
+      () => db.prepare(
+        "DELETE FROM product_batches WHERE id = ?"
+      ).run(batchId),
+      /FOREIGN KEY constraint failed/
+    );
+
+    const remainingBatch = db.prepare(`
+      SELECT id, quantity_on_hand
+      FROM product_batches
+      WHERE id = ?
+    `).get(batchId);
+
+    assert.deepEqual({ ...remainingBatch }, {
+      id: batchId,
+      quantity_on_hand: 20
+    });
+
+    const movements = db.prepare(`
+      SELECT movement_type, quantity, notes
+      FROM stock_movements
+      WHERE batch_id = ?
+      ORDER BY id
+    `).all(batchId);
+
+    assert.deepEqual(movements.map((row) => ({ ...row })), [
+      {
+        movement_type: "purchase",
+        quantity: 20,
+        notes: "Recorded purchase"
+      }
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
+
 test("stock ledger rejects direct batch balance changes", (t) => {
   const db = openDatabase(createTestDatabase(t));
 
