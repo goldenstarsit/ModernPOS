@@ -133,3 +133,64 @@ test("stock movement creation rolls back and preserves the original database err
     "ROLLBACK"
   ]);
 });
+
+test("stock movement creation rolls back when reading the inserted movement fails", () => {
+  const originalError = new Error("Unexpected movement read failure");
+  const statements = [];
+
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 3);
+            return { id: 3, quantity_on_hand: 10 };
+          }
+        };
+      }
+
+      if (/INSERT INTO stock_movements/.test(sql)) {
+        return {
+          run(...params) {
+            assert.deepEqual(params, [
+              3,
+              "purchase",
+              5,
+              "",
+              ""
+            ]);
+            return { lastInsertRowid: 41 };
+          }
+        };
+      }
+
+      if (/WHERE sm\.id = \?/.test(sql)) {
+        return {
+          get(movementId) {
+            assert.equal(movementId, 41);
+            throw originalError;
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, {
+      batch_id: 3,
+      movement_type: "purchase",
+      quantity: 5
+    }),
+    (error) => error === originalError
+  );
+
+  assert.deepEqual(statements, [
+    "BEGIN IMMEDIATE",
+    "ROLLBACK"
+  ]);
+});
