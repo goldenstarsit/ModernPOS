@@ -427,3 +427,47 @@ test("stock movement creation returns the inserted movement and commits", () => 
   assert.notEqual(result, expectedMovement);
   assert.deepEqual(statements, ["BEGIN IMMEDIATE", "COMMIT"]);
 });
+
+test("stock movement creation translates insufficient stock and rolls back", () => {
+  const statements = [];
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 3);
+            return { id: 3, quantity_on_hand: 2 };
+          }
+        };
+      }
+
+      if (/INSERT INTO stock_movements/.test(sql)) {
+        return {
+          run(...params) {
+            assert.deepEqual(params, [3, "sale", 5, "", ""]);
+            throw new Error("Insufficient stock");
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, {
+      batch_id: 3,
+      movement_type: "sale",
+      quantity: 5
+    }),
+    (error) =>
+      error.code === "INSUFFICIENT_STOCK" &&
+      error.status === 409 &&
+      error.message === "The movement quantity exceeds available stock."
+  );
+
+  assert.deepEqual(statements, ["BEGIN IMMEDIATE", "ROLLBACK"]);
+});
