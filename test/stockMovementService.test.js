@@ -315,3 +315,42 @@ test("stock movement creation preserves the original error when rollback also fa
     "ROLLBACK"
   ]);
 });
+
+test("stock movement creation rejects a missing batch and rolls back", () => {
+  const statements = [];
+
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 999999);
+            return undefined;
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, {
+      batch_id: 999999,
+      movement_type: "purchase",
+      quantity: 5
+    }),
+    (error) =>
+      error.code === "BATCH_NOT_FOUND" &&
+      error.status === 404 &&
+      error.message === "The specified product batch does not exist."
+  );
+
+  assert.deepEqual(statements, [
+    "BEGIN IMMEDIATE",
+    "ROLLBACK"
+  ]);
+});
