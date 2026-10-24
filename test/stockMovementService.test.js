@@ -471,3 +471,54 @@ test("stock movement creation translates insufficient stock and rolls back", () 
 
   assert.deepEqual(statements, ["BEGIN IMMEDIATE", "ROLLBACK"]);
 });
+
+test("stock movement creation translates stock balance limit and rolls back", () => {
+  const statements = [];
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 3);
+            return {
+              id: 3,
+              quantity_on_hand: Number.MAX_SAFE_INTEGER
+            };
+          }
+        };
+      }
+
+      if (/INSERT INTO stock_movements/.test(sql)) {
+        return {
+          run(...params) {
+            assert.deepEqual(params, [3, "purchase", 1, "", ""]);
+            throw new Error(
+              "Stock balance exceeds JavaScript safe integer limit"
+            );
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  assert.throws(
+    () =>
+      createStockMovement(db, {
+        batch_id: 3,
+        movement_type: "purchase",
+        quantity: 1
+      }),
+    (error) =>
+      error.code === "STOCK_BALANCE_LIMIT" &&
+      error.status === 409 &&
+      error.message ===
+        "The resulting stock balance exceeds the supported safe integer limit."
+  );
+
+  assert.deepEqual(statements, ["BEGIN IMMEDIATE", "ROLLBACK"]);
+});
