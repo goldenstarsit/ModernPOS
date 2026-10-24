@@ -559,3 +559,22 @@ test("stock movement creation preserves the original error when transaction star
     "ROLLBACK"
   ]);
 });
+
+test("stock movement creation rejects a null body before database access", () => {
+  const db = {
+    exec() {
+      assert.fail("Database transactions must not start for invalid input");
+    },
+    prepare() {
+      assert.fail("Database queries must not run for invalid input");
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, null),
+    (error) =>
+      error.code === "VALIDATION_ERROR" &&
+      error.status === 400 &&
+      error.message === "The request body must be a JSON object."
+  );
+});
