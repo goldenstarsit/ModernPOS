@@ -265,3 +265,53 @@ test("stock movement creation rolls back and preserves the original commit error
     "ROLLBACK"
   ]);
 });
+
+test("stock movement creation preserves the original error when rollback also fails", () => {
+  const originalError = new Error("Unexpected database write failure");
+  const rollbackError = new Error("Unexpected rollback failure");
+  const statements = [];
+
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+
+      if (sql === "ROLLBACK") {
+        throw rollbackError;
+      }
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 3);
+            return { id: 3, quantity_on_hand: 10 };
+          }
+        };
+      }
+
+      if (/INSERT INTO stock_movements/.test(sql)) {
+        return {
+          run() {
+            throw originalError;
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, {
+      batch_id: 3,
+      movement_type: "purchase",
+      quantity: 5
+    }),
+    (error) => error === originalError
+  );
+
+  assert.deepEqual(statements, [
+    "BEGIN IMMEDIATE",
+    "ROLLBACK"
+  ]);
+});
