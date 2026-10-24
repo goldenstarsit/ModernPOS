@@ -578,3 +578,22 @@ test("stock movement creation rejects a null body before database access", () =>
       error.message === "The request body must be a JSON object."
   );
 });
+
+test("stock movement creation rejects an array body before database access", () => {
+  const db = {
+    exec() {
+      assert.fail("Database transactions must not start for invalid input");
+    },
+    prepare() {
+      assert.fail("Database queries must not run for invalid input");
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, []),
+    (error) =>
+      error.code === "VALIDATION_ERROR" &&
+      error.status === 400 &&
+      error.message === "The request body must be a JSON object."
+  );
+});
