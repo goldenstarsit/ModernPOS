@@ -354,3 +354,76 @@ test("stock movement creation rejects a missing batch and rolls back", () => {
     "ROLLBACK"
   ]);
 });
+
+test("stock movement creation returns the inserted movement and commits", () => {
+  const statements = [];
+  const expectedMovement = {
+    id: 41,
+    batch_id: 3,
+    movement_type: "purchase",
+    quantity: 5,
+    reference: "PO-73",
+    notes: "Successful service regression",
+    created_at: "2026-10-23T12:00:00.000Z",
+    product_id: 7,
+    batch_number: "BATCH-73",
+    expiry_date: "2027-12-31",
+    current_quantity_on_hand: 15,
+    product_name: "Test Medicine",
+    product_sku: "MED-73"
+  };
+
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+    },
+    prepare(sql) {
+      if (/SELECT id, quantity_on_hand/.test(sql)) {
+        return {
+          get(batchId) {
+            assert.equal(batchId, 3);
+            return { id: 3, quantity_on_hand: 10 };
+          }
+        };
+      }
+
+      if (/INSERT INTO stock_movements/.test(sql)) {
+        return {
+          run(...params) {
+            assert.deepEqual(params, [
+              3,
+              "purchase",
+              5,
+              "PO-73",
+              "Successful service regression"
+            ]);
+            return { lastInsertRowid: 41 };
+          }
+        };
+      }
+
+      if (/WHERE sm\.id = \?/.test(sql)) {
+        return {
+          get(movementId) {
+            assert.equal(movementId, 41);
+            return expectedMovement;
+          }
+        };
+      }
+
+      assert.fail(`Unexpected SQL statement: ${sql}`);
+    }
+  };
+
+  const result = createStockMovement(db, {
+    batch_id: 3,
+    movement_type: "purchase",
+    quantity: 5,
+    reference: "PO-73",
+    notes: "Successful service regression"
+  });
+
+  assert.deepEqual(result, expectedMovement);
+  assert.notEqual(result, expectedMovement);
+  assert.deepEqual(statements, ["BEGIN IMMEDIATE", "COMMIT"]);
+});
