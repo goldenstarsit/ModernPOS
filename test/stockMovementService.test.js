@@ -522,3 +522,40 @@ test("stock movement creation translates stock balance limit and rolls back", ()
 
   assert.deepEqual(statements, ["BEGIN IMMEDIATE", "ROLLBACK"]);
 });
+
+test("stock movement creation preserves the original error when transaction start fails", () => {
+  const originalError = new Error("Unexpected transaction start failure");
+  const rollbackError = new Error("Unexpected rollback failure");
+  const statements = [];
+
+  const db = {
+    exec(sql) {
+      statements.push(sql);
+
+      if (sql === "BEGIN IMMEDIATE") {
+        throw originalError;
+      }
+
+      if (sql === "ROLLBACK") {
+        throw rollbackError;
+      }
+    },
+    prepare() {
+      assert.fail("Database queries must not run when transaction start fails");
+    }
+  };
+
+  assert.throws(
+    () => createStockMovement(db, {
+      batch_id: 3,
+      movement_type: "purchase",
+      quantity: 5
+    }),
+    (error) => error === originalError
+  );
+
+  assert.deepEqual(statements, [
+    "BEGIN IMMEDIATE",
+    "ROLLBACK"
+  ]);
+});
