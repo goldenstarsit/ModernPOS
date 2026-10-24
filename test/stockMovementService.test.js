@@ -597,3 +597,29 @@ test("stock movement creation rejects an array body before database access", () 
       error.message === "The request body must be a JSON object."
   );
 });
+
+test("stock movement creation rejects a non-string reference before database access", () => {
+  const db = {
+    exec() {
+      assert.fail("Database transactions must not start for invalid input");
+    },
+    prepare() {
+      assert.fail("Database queries must not run for invalid input");
+    }
+  };
+
+  assert.throws(
+    () =>
+      createStockMovement(db, {
+        batch_id: 3,
+        movement_type: "purchase",
+        quantity: 1,
+        reference: 123
+      }),
+    (error) =>
+      error.code === "VALIDATION_ERROR" &&
+      error.status === 400 &&
+      error.message ===
+        "reference must be a string of at most 1000 characters."
+  );
+});
